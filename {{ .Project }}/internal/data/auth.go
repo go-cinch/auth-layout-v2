@@ -1,0 +1,54 @@
+package data
+
+import (
+	"context"
+	"strings"
+
+	"{{ .Computed.common_module_final }}/log"
+	"gorm.io/gorm"
+
+	"{{ .Computed.module_name_final }}/internal/biz"
+	"{{ .Computed.module_name_final }}/internal/data/model"
+)
+
+type authRepo struct {
+	data *Data
+}
+
+func NewAuthRepo(data *Data) biz.AuthRepo {
+	return &authRepo{data: data}
+}
+
+func (r authRepo) GetLoginUser(ctx context.Context, username string) (*biz.LoginUser, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return nil, biz.ErrIllegalParameter(ctx, "username")
+	}
+
+	db := gorm.G[model.User](r.data.DB(ctx))
+	m, err := db.Where("username = ?", username).First(ctx)
+	if err == gorm.ErrRecordNotFound || m.ID == 0 {
+		return nil, biz.ErrRecordNotFound(ctx)
+	}
+	if err != nil {
+		log.WithContext(ctx).WithError(err).Error("get login user failed")
+		return nil, err
+	}
+
+	u := &biz.LoginUser{
+		ID:     m.ID,
+		Code:   m.Code,
+		Locked: m.Locked != nil && *m.Locked != 0,
+	}
+	if m.Username != nil {
+		u.Username = *m.Username
+	}
+	if m.Platform != nil {
+		u.Platform = *m.Platform
+	}
+	if m.Password != nil {
+		u.PasswordHash = *m.Password
+	}
+	return u, nil
+}
+

@@ -1,0 +1,34 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+*.test
+*.out
+
+# Go workspace file
+go.work
+go.work.sum
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Vendor
+vendor/
+
+# Tools
+.tools/
+
+# Debug files
+docs/*/*
+docs/swagger-ui.html
+docs/.openapi-temp.yaml
+!docs/{{ .Computed.module_name_final }}-proto/{{ .Computed.module_name_final }}.openapi.yaml
+
+# OS
+.DS_Store

@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch {{ .Computed.service_name_final }}",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/{{ .Computed.service_name_final }}",
+      "cwd": "${workspaceFolder}/cmd/{{ .Computed.service_name_final }}",
+      "env": {},
+      "args": []
+    }
+  ]
+}

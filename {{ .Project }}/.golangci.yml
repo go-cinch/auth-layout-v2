@@ -1,0 +1,42 @@
+version: "2"
+
+run:
+  timeout: 3m
+  tests: true
+
+issues:
+  max-same-issues: 0
+  exclude:
+    - "too many lines above return"
+  exclude-rules:
+    - linters:
+        - wsl_v5
+      text: "too many lines above return"
+
+linters:
+  default: fast
+  enable:
+    - wsl_v5
+  disable:
+    - wsl
+    - depguard
+    - nlreturn
+    - funcorder
+    - mnd
+    - dupl        # Disabled: CRUD patterns naturally have similar structure
+    - cyclop      # Disabled: complexity metrics not useful for business logic
+    - gocyclo     # Disabled: cyclomatic complexity not useful for business logic
+    - gocognit    # Disabled: cognitive complexity often reflects actual business complexity
+    - nestif      # Disabled: nested conditions are often clearer than alternatives
+  settings:
+    funlen:
+      lines: 180
+      statements: 100
+    lll:
+      line-length: 200
+    wsl_v5:
+      allow-first-in-block: true
+      allow-whole-block: false
+      branch-max-lines: 2
+      disable:
+        - return

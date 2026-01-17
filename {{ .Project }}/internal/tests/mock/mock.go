@@ -1,0 +1,228 @@
+package mock
+
+import (
+	"context"
+	"fmt"
+	"net"
+	"net/http"
+	"runtime/debug"
+	"sync"
+
+	"{{ .Computed.common_module_final }}/mock"
+	gormTenant "{{ .Computed.common_module_final }}/plugins/gorm/tenant/v2"
+	"github.com/go-kratos/kratos/v2/transport"
+
+	"{{ .Computed.module_name_final }}/internal/biz"
+	"{{ .Computed.module_name_final }}/internal/conf"
+	"{{ .Computed.module_name_final }}/internal/data"
+	"{{ .Computed.module_name_final }}/internal/service"
+)
+
+func {{ .Computed.service_name_capitalized }}Service() *service.{{ .Computed.service_name_capitalized }}Service {
+	c, _, cache := Data()
+	tx := Transaction()
+
+	authUC := biz.NewAuthUseCase(c, AuthRepo(), tx, cache)
+	userUC := biz.NewUserUseCase(c, UserRepo(), {{- if .Computed.enable_hotspot_final }}HotspotRepo(), {{- end }}tx, cache)
+	roleUC := biz.NewRoleUseCase(c, RoleRepo(), tx, cache)
+	permissionUC := biz.NewPermissionUseCase(c, PermissionRepo())
+	{{- if .Computed.enable_action_final }}
+	actionUC := biz.NewActionUseCase(c, ActionRepo(), tx, cache)
+	{{- end }}
+	{{- if .Computed.enable_user_group_final }}
+	userGroupUC := biz.NewUserGroupUseCase(c, UserGroupRepo(), tx, cache)
+	{{- end }}
+	{{- if .Computed.enable_whitelist_final }}
+	whitelistUC := biz.NewWhitelistUseCase(c, WhitelistRepo(), tx, cache)
+	{{- end }}
+
+	return service.New{{ .Computed.service_name_capitalized }}Service(
+		c,
+		authUC,
+		userUC,
+		roleUC,
+		permissionUC,
+		{{- if .Computed.enable_action_final }}
+		actionUC,
+		{{- end }}
+		{{- if .Computed.enable_user_group_final }}
+		userGroupUC,
+		{{- end }}
+		{{- if .Computed.enable_whitelist_final }}
+		whitelistUC,
+		{{- end }}
+		{{- if .Computed.enable_hotspot_final }}
+		HotspotRepo(),
+		{{- end }}
+	)
+}
+
+func Transaction() biz.Transaction {
+	_, d, _ := Data()
+	return data.NewTransaction(d)
+}
+
+func AuthRepo() biz.AuthRepo {
+	_, d, _ := Data()
+	return data.NewAuthRepo(d)
+}
+
+func UserRepo() biz.UserRepo {
+	_, d, _ := Data()
+	return data.NewUserRepo(d)
+}
+
+func RoleRepo() biz.RoleRepo {
+	_, d, _ := Data()
+	return data.NewRoleRepo(d)
+}
+
+func PermissionRepo() biz.PermissionRepo {
+	_, d, _ := Data()
+	return data.NewPermissionRepo(d)
+}
+
+{{- if .Computed.enable_action_final }}
+func ActionRepo() biz.ActionRepo {
+	_, d, _ := Data()
+	return data.NewActionRepo(d)
+}
+{{- end }}
+
+{{- if .Computed.enable_user_group_final }}
+func UserGroupRepo() biz.UserGroupRepo {
+	_, d, _ := Data()
+	return data.NewUserGroupRepo(d)
+}
+{{- end }}
+
+{{- if .Computed.enable_whitelist_final }}
+func WhitelistRepo() biz.WhitelistRepo {
+	_, d, _ := Data()
+	return data.NewWhitelistRepo(d)
+}
+{{- end }}
+
+{{- if .Computed.enable_hotspot_final }}
+func HotspotRepo() biz.HotspotRepo {
+	_, d, _ := Data()
+	return data.NewHotspotRepo(d)
+}
+{{- end }}
+
+type headerCarrier http.Header
+
+func (hc headerCarrier) Get(key string) string { return http.Header(hc).Get(key) }
+func (hc headerCarrier) Set(key string, value string) { http.Header(hc).Set(key, value) }
+func (hc headerCarrier) Add(key string, value string) { http.Header(hc).Add(key, value) }
+
+// Keys lists the keys stored in this carrier.
+func (hc headerCarrier) Keys() []string {
+	keys := make([]string, 0, len(hc))
+	for k := range http.Header(hc) {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// Values returns a slice value associated with the passed key.
+func (hc headerCarrier) Values(key string) []string {
+	return http.Header(hc).Values(key)
+}
+
+func newUserHeader(k, v string) *headerCarrier {
+	header := &headerCarrier{}
+	header.Set(k, v)
+	return header
+}
+
+type Transport struct {
+	kind      transport.Kind
+	endpoint  string
+	operation string
+	reqHeader transport.Header
+}
+
+func (tr *Transport) Kind() transport.Kind        { return tr.kind }
+func (tr *Transport) Endpoint() string            { return tr.endpoint }
+func (tr *Transport) Operation() string           { return tr.operation }
+func (tr *Transport) RequestHeader() transport.Header { return tr.reqHeader }
+func (*Transport) ReplyHeader() transport.Header   { return nil }
+
+// NewContextWithUserId creates a context containing tenant/user id for unit tests.
+func NewContextWithUserId(ctx context.Context, u string) context.Context {
+	tr := &Transport{
+		// Align with tenant v2 middleware: it reads tenant id from "x-tenant-id".
+		reqHeader: newUserHeader("x-tenant-id", u),
+	}
+	ctx = transport.NewServerContext(ctx, tr)
+	// In unit tests we call service methods directly (no middleware chain), so set tenant id on context.
+	return gormTenant.NewContext(ctx, u)
+}
+
+var (
+	onceC     *conf.Bootstrap
+	onceData  *data.Data
+	onceCache biz.Cache
+	once      sync.Once
+)
+
+func Data() (c *conf.Bootstrap, dataData *data.Data, cache biz.Cache) {
+	debug.SetGCPercent(-1)
+	once.Do(func() {
+		onceC = DBAndRedis()
+		onceData, _, _ = data.NewData(onceC)
+		universalClient, err := data.NewRedis(onceC)
+		if err != nil {
+			panic(err)
+		}
+		onceCache = data.NewCache(onceC, universalClient)
+	})
+	return onceC, onceData, onceCache
+}
+
+// DBAndRedis returns a Bootstrap config for local integration/unit tests.
+func DBAndRedis() *conf.Bootstrap {
+	// Use real database connection; use in-memory Redis.
+	host1 := "localhost"
+	dbName := "{{ .Computed.service_name_final }}"
+	{{- if eq .Computed.db_type_final "mysql" }}
+	port1 := 3306
+	dbDriver := "mysql"
+	dbDsn := fmt.Sprintf("root:password@tcp(%s:%d)/%s?charset=utf8mb4&parseTime=True&loc=Local", host1, port1, dbName)
+	{{- else }}
+	port1 := 5432
+	dbDriver := "postgres"
+	dbDsn := fmt.Sprintf("host=%s user=root password=password dbname=%s port=%d sslmode=disable TimeZone=UTC", host1, dbName, port1)
+	{{- end }}
+
+	host2, port2, err := mock.NewRedis()
+	if err != nil {
+		panic(err)
+	}
+
+	return &conf.Bootstrap{
+		Server: &conf.Server{
+			MachineId: "123",
+		},
+		Log: &conf.Log{
+			Level:   "debug",
+			JSON:    false,
+			ShowSQL: true,
+		},
+		Db: &conf.DB{
+			Driver:  dbDriver,
+			Dsn:     dbDsn,
+			Migrate: false,
+		},
+		Redis: &conf.Redis{
+			Dsn: fmt.Sprintf("redis://%s", net.JoinHostPort(host2, fmt.Sprintf("%d", port2))),
+		},
+		Tracer: &conf.Tracer{
+			Enable: true,
+			Otlp:   &conf.Tracer_Otlp{},
+			Stdout: &conf.Tracer_Stdout{},
+		},
+	}
+}
+

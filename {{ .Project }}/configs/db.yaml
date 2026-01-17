@@ -1,0 +1,57 @@
+# Database configuration
+db:
+  # Database driver: postgres or mysql
+  driver: {{ .Computed.db_type_final }}
+
+  # DSN examples:
+  #   postgres: "postgresql://root:password@127.0.0.1:5432/{{ .Computed.service_name_final }}?sslmode=disable&TimeZone=UTC"
+  #   mysql:    "root:password@tcp(127.0.0.1:3306)/{{ .Computed.service_name_final }}?charset=utf8mb4&parseTime=True&loc=Local"
+  dsn: {{ if eq .Computed.db_type_final "mysql" }}"root:password@tcp(127.0.0.1:3306)/{{ .Computed.service_name_final }}?charset=utf8mb4&parseTime=True&loc=Local"{{ else }}"postgresql://root:password@127.0.0.1:5432/{{ .Computed.service_name_final }}?sslmode=disable&TimeZone=UTC"{{ end }}
+
+  # Run migrations on startup
+  migrate: true
+
+  # Model generation settings (gentool)
+  gen:
+    # Tables to exclude from model generation
+    # schema_migrations is always excluded by default
+    exclude:
+      - schema_migrations
+      # Add more tables to exclude here:
+      # - audit_logs
+      # - temp_table
+
+    # Customization options
+    customization:
+      # Use carbon.DateTime instead of time.Time for timestamp fields
+      # Requires: github.com/golang-module/carbon/v2
+      useCarbonTime: true
+
+      # Use uint64 for ID fields (default: int64)
+      useUint64Id: true
+
+      # Add ",string" to JSON tags for specific fields (for JavaScript compatibility)
+      # Serializes uint64/int64 as string to avoid precision loss
+      # Example: ["id", "userId", "orderId"]
+      jsonStringFields:
+        - id
+
+      # Remove pointer (*) from nullable fields
+      # Warning: NULL values will be zero values (0, "", false, etc.)
+      removeNullablePointer: false
+
+    # GORM associations
+    # Format: model_table|related_table|FieldName|relation_type|gorm_tag
+    # relation_type: has_one, has_many, belongs_to, many_to_many
+    # gorm_tag examples:
+    #   - foreignKey:UserID
+    #   - references:UserID
+    #   - foreignKey:PostID;references:ID
+    # Examples:
+    #   - 'user|role|Role|has_one|foreignKey:RoleID'
+    #   - 'post|post_resource|Resources|has_many|foreignKey:PostID'
+    #   - 'post|user|User|has_one|references:UserID'
+    #   - 'post|post|Quote|has_one|foreignKey:QuoteID'  # self-reference
+    #   - 'post_comment|post_comment|[]Children|has_many|foreignKey:ParentID'  # array with slice prefix
+    association: []
+

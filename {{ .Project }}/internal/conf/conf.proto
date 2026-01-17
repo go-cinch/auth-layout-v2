@@ -1,0 +1,111 @@
+syntax = "proto3";
+package conf;
+
+option go_package = "{{ .Computed.module_name_final }}/internal/conf;conf";
+
+import "google/protobuf/duration.proto";
+
+message Bootstrap {
+  string name = 1;
+  string version = 2;
+  Server server = 3;
+  {{- if .Computed.enable_trace_final }}
+  Tracer tracer = 4;
+  {{- end }}
+  DB db = 5;
+  Log log = 6;
+  {{- if .Computed.enable_redis_final }}
+  Redis redis = 7;
+  {{- end }}
+  {{- if and .Computed.enable_redis_final .Computed.enable_task_final }}
+  Task task = 8;
+  {{- end }}
+}
+
+message DB {
+  string driver = 1;
+  string dsn = 2;
+  bool migrate = 3;
+}
+
+message Log {
+  string level = 1;
+  bool JSON = 2;
+  bool showSQL = 3;
+}
+
+message Server {
+  message HTTP {
+    string network = 1;
+    string addr = 2;
+    google.protobuf.Duration timeout = 3;
+    bool docs = 4;
+  }
+  message GRPC {
+    string network = 1;
+    string addr = 2;
+    google.protobuf.Duration timeout = 3;
+  }
+  message Jwt {
+    string key = 1;
+    string expires = 2;
+  }
+  string machineId = 1;
+  HTTP http = 2;
+  GRPC grpc = 3;
+  bool enablePprof = 4;
+  string language = 5;
+  bool validate = 6;
+  bool nocache = 7;
+  Jwt jwt = 8;
+  {{- if .Computed.enable_captcha_final }}
+  bool skipCaptcha = 9;
+  {{- end }}
+}
+
+{{- if .Computed.enable_trace_final }}
+
+message Tracer {
+  message Otlp {
+    string endpoint = 1;
+    bool insecure = 2;
+  }
+  message Stdout {
+    bool prettyPrint = 1;
+  }
+  bool enable = 1;
+  float ratio = 2;
+  Otlp otlp = 3;
+  Stdout stdout = 4;
+}
+{{- end }}
+
+{{- if .Computed.enable_redis_final }}
+
+message Redis {
+  string dsn = 1;
+}
+{{- end }}
+
+{{- if and .Computed.enable_redis_final .Computed.enable_task_final }}
+
+message CronTask {
+  string name = 1;
+  string expr = 2;
+  int64 timeout = 3;
+  int64 retry = 4;
+}
+
+message Task {
+  map<string, CronTask> cron = 1;
+  message Group {
+    string loginFailed = 1;
+    string loginLast = 2;
+    {{- if .Computed.enable_hotspot_final }}
+    string refreshHotspot = 3;
+    string refreshHotspotManual = 4;
+    {{- end }}
+  }
+  Group group = 2;
+}
+{{- end }}

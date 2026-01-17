@@ -1,0 +1,364 @@
+# yaml-language-server: $schema=https://hay-kot.github.io/scaffold/schema.json
+
+messages:
+  pre: |
+    # Go-Cinch Auth Service Generator
+
+    This will create an authentication and authorization microservice with:
+    - JWT authentication
+    - RBAC (Role-Based Access Control)
+    - Permission management
+    - Redis caching
+    - Optional advanced features (UserGroup, Action, Whitelist, Hotspot, Captcha, User Lock)
+
+    Based on Kratos framework with Wire dependency injection.
+
+  post: |
+    # Auth Service Created: {{ .Computed.service_name_final }}
+
+    Next steps:
+      cd {{ .Scaffold.Project }}
+      make init     # Install tools
+      make all      # Generate code and build
+      make run      # Run the service
+
+    HTTP: http://localhost:{{ .Scaffold.http_port }}
+    gRPC: localhost:{{ .Scaffold.grpc_port }}
+
+    Default admin user will be created on first run.
+
+questions:
+  # ==================== Basic Information ====================
+  - name: service_name
+    prompt:
+      message: Service name (leave empty to use Project name)?
+
+  - name: module_name
+    prompt:
+      message: Go module name (leave empty to use service_name)?
+
+  - name: common_module
+    prompt:
+      message: "Common library base path (for internal networks, e.g., gitlab.internal.com/foo/common)?"
+      default: "github.com/go-cinch/common"
+
+  # ==================== Server Configuration ====================
+  - name: http_port
+    prompt:
+      message: HTTP server port?
+      default: "8080"
+
+  - name: grpc_port
+    prompt:
+      message: gRPC server port?
+      default: "8180"
+
+  - name: enable_health_check
+    prompt:
+      message: Enable health check endpoints?
+      type: string
+      default: "true"
+
+  # ==================== Database Configuration ====================
+  - name: db_type
+    prompt:
+      message: Database type (postgres or mysql)?
+      default: "postgres"
+
+  - name: orm_type
+    prompt:
+      message: 'ORM type (gorm only for auth service)?'
+      default: "gorm"
+
+  - name: enable_gen_model
+    prompt:
+      message: 'Auto-generate models from database with gentool (recommended)?'
+      type: string
+      default: "true"
+
+  # ==================== Redis Configuration (Required for Auth) ====================
+  - name: enable_redis
+    prompt:
+      message: 'Enable Redis support (required for auth service)?'
+      type: string
+      default: "true"
+
+  - name: enable_cache
+    prompt:
+      message: 'Enable cache layer (biz cache wrapper with Redis)?'
+      type: string
+      default: "true"
+
+  - name: enable_idempotent
+    prompt:
+      message: 'Enable idempotent middleware (x-idempotent header)?'
+      type: string
+      default: "true"
+
+  # ==================== Auth-Specific Features ====================
+  - name: enable_action
+    prompt:
+      message: 'Enable Action module (fine-grained resource permissions)?'
+      type: string
+      default: "false"
+
+  - name: enable_user_group
+    prompt:
+      message: 'Enable UserGroup module (group-based user management)?'
+      type: string
+      default: "false"
+
+  - name: enable_whitelist
+    prompt:
+      message: 'Enable Whitelist module (permission and JWT whitelist)?'
+      type: string
+      default: "false"
+
+  - name: enable_hotspot
+    prompt:
+      message: 'Enable Hotspot cache (optimized hot data loading)?'
+      type: string
+      default: "false"
+
+  - name: enable_captcha
+    prompt:
+      message: 'Enable Captcha (verification code for login)?'
+      type: string
+      default: "false"
+
+  - name: enable_user_lock
+    prompt:
+      message: 'Enable User Lock mechanism (lock after wrong password attempts)?'
+      type: string
+      default: "false"
+
+  # ==================== Middleware Configuration ====================
+  - name: middlewares
+    prompt:
+      message: "Enable optional middlewares (comma-separated: header,xxx) [input 'none' to disable all]?"
+      default: "header"
+
+  - name: enable_trace
+    prompt:
+      message: Enable OpenTelemetry tracing?
+      type: string
+      default: "true"
+
+  - name: enable_ws
+    prompt:
+      message: Enable WebSocket support?
+      type: string
+      default: "false"
+
+  - name: enable_task
+    prompt:
+      message: 'Enable task/cron worker (distributed task scheduler)?'
+      type: string
+      default: "false"
+
+  # ==================== Error Handling ====================
+  - name: enable_reason_proto
+    prompt:
+      message: Enable reason-proto for error handling?
+      type: string
+      default: "true"
+
+  - name: enable_i18n
+    when: '{{ .enable_reason_proto }}'
+    prompt:
+      message: Enable i18n support for error messages?
+      type: string
+      default: "false"
+
+computed:
+  # Use provided value, fallback to Project if not provided
+  service_name_final: '{{ or .Scaffold.service_name .Scaffold.Project }}'
+  service_name_capitalized: '{{ toPascalCase (or .Scaffold.service_name .Scaffold.Project) }}'
+  module_name_final: '{{ or .Scaffold.module_name .Scaffold.service_name .Scaffold.Project }}'
+  common_module_final: '{{ or .Scaffold.common_module "github.com/go-cinch/common" }}'
+  # Middlewares: convert array ["tenant","header"] to string "tenant,header"
+  middlewares_final: '{{ $m := .Scaffold.middlewares }}{{ if not $m }}header{{ else }}{{ $t := printf "%T" $m }}{{ if or (hasPrefix $t "[]") (eq $t "[]interface {}") }}{{ $m | join "," }}{{ else }}{{ $m }}{{ end }}{{ end }}'
+  enable_trace_final: '{{ eq .Scaffold.enable_trace "true" }}'
+  enable_ws_final: '{{ eq .Scaffold.enable_ws "true" }}'
+  enable_health_check_final: '{{ eq .Scaffold.enable_health_check "true" }}'
+  enable_reason_proto_final: '{{ eq .Scaffold.enable_reason_proto "true" }}'
+  enable_i18n_final: '{{ eq .Scaffold.enable_i18n "true" }}'
+  enable_gen_model_final: '{{ eq .Scaffold.enable_gen_model "true" }}'
+  enable_redis_final: '{{ eq .Scaffold.enable_redis "true" }}'
+  enable_cache_final: '{{ eq .Scaffold.enable_cache "true" }}'
+  enable_idempotent_final: '{{ eq .Scaffold.enable_idempotent "true" }}'
+  enable_task_final: '{{ eq .Scaffold.enable_task "true" }}'
+  db_type_final: '{{ or .Scaffold.db_type "postgres" }}'
+  orm_type_final: '{{ or .Scaffold.orm_type "gorm" }}'
+  # Auth-specific computed flags
+  enable_action_final: '{{ eq .Scaffold.enable_action "true" }}'
+  enable_user_group_final: '{{ eq .Scaffold.enable_user_group "true" }}'
+  enable_whitelist_final: '{{ eq .Scaffold.enable_whitelist "true" }}'
+  enable_hotspot_final: '{{ eq .Scaffold.enable_hotspot "true" }}'
+  enable_captcha_final: '{{ eq .Scaffold.enable_captcha "true" }}'
+  enable_user_lock_final: '{{ eq .Scaffold.enable_user_lock "true" }}'
+
+features:
+  # ==================== Common Features ====================
+  - value: '{{ .Computed.enable_trace_final }}'
+    globs:
+      - "**/internal/data/tracer.go"
+      - "**/configs/tracer.yaml"
+  - value: true
+    globs:
+      - "**/configs/log.yaml"
+  - value: '{{ .Computed.enable_health_check_final }}'
+    globs:
+      - "**/internal/service/health.go"
+      - "**/internal/server/health.go"
+  - value: '{{ contains "header" .Computed.middlewares_final }}'
+    globs:
+      - "**/internal/server/middleware/header.go"
+  - value: true
+    globs:
+      - "**/internal/data/data.go"
+      - "**/internal/db/**"
+      - "**/configs/db.yaml"
+  - value: '{{ eq .Computed.orm_type_final "gorm" }}'
+    globs:
+      - "**/internal/data/model/**"
+  - value: '{{ .Computed.enable_redis_final }}'
+    globs:
+      - "**/configs/redis.yaml"
+  - value: '{{ and .Computed.enable_redis_final .Computed.enable_cache_final }}'
+    globs:
+      - "**/internal/data/cache.go"
+  - value: '{{ and .Computed.enable_redis_final .Computed.enable_idempotent_final }}'
+    globs:
+      - "**/internal/server/middleware/idempotent.go"
+  - value: '{{ and .Computed.enable_redis_final .Computed.enable_task_final }}'
+    globs:
+      - "**/internal/pkg/task/**"
+  - value: '{{ .Computed.enable_task_final }}'
+    globs:
+      - "**/configs/task.yaml"
+  - value: '{{ .Computed.enable_reason_proto_final }}'
+    globs:
+      - "**/api/reason-proto/reason.proto"
+      - "**/internal/biz/reason.go"
+  - value: '{{ .Computed.enable_i18n_final }}'
+    globs:
+      - "**/internal/server/middleware/locales/*.yml"
+  - value: '{{ .Computed.enable_ws_final }}'
+    globs:
+      - "**/internal/server/ws.go"
+      - "**/internal/service/ws.go"
+  - value: true
+    globs:
+      - "**/internal/biz/biz.go"
+      - "**/internal/data/client.go"
+      - "**/configs/client.yaml"
+
+  # ==================== Auth Core Features (Always Included) ====================
+  - value: true
+    globs:
+      - "**/internal/biz/user.go"
+      - "**/internal/biz/role.go"
+      - "**/internal/biz/permission.go"
+      - "**/internal/biz/auth.go"
+      - "**/internal/data/user.go"
+      - "**/internal/data/role.go"
+      - "**/internal/data/permission.go"
+      - "**/internal/data/auth.go"
+      - "**/internal/data/model/user.go"
+      - "**/internal/data/model/role.go"
+      - "**/internal/data/model/permission.go"
+      - "**/internal/service/user.go"
+      - "**/internal/service/role.go"
+      - "**/internal/service/permission.go"
+      - "**/internal/service/auth.go"
+      - "**/internal/server/middleware/permission.go"
+      - "**/api/auth-proto/*.proto"
+
+  # ==================== Auth Extended Features (Conditional) ====================
+  - value: '{{ .Computed.enable_action_final }}'
+    globs:
+      - "**/internal/biz/action.go"
+      - "**/internal/data/action.go"
+      - "**/internal/data/model/action.go"
+      - "**/internal/service/action.go"
+
+  - value: '{{ .Computed.enable_user_group_final }}'
+    globs:
+      - "**/internal/biz/user_group.go"
+      - "**/internal/data/user_group.go"
+      - "**/internal/data/model/user_group.go"
+      - "**/internal/service/user_group.go"
+
+  - value: '{{ .Computed.enable_whitelist_final }}'
+    globs:
+      - "**/internal/biz/whitelist.go"
+      - "**/internal/data/whitelist.go"
+      - "**/internal/data/model/whitelist.go"
+      - "**/internal/service/whitelist.go"
+
+  - value: '{{ .Computed.enable_hotspot_final }}'
+    globs:
+      - "**/internal/biz/hotspot.go"
+      - "**/internal/data/hotspot.go"
+
+  - value: '{{ .Computed.enable_captcha_final }}'
+    globs:
+      - "**/internal/biz/captcha.go"
+
+  - value: '{{ .Computed.enable_user_lock_final }}'
+    globs:
+      - "**/internal/biz/user_lock.go"
+
+presets:
+  # Simple preset: Core RBAC with Redis caching
+  simple:
+    service_name: ""
+    module_name: ""
+    http_port: "8080"
+    grpc_port: "8180"
+    enable_health_check: "true"
+    db_type: "postgres"
+    orm_type: "gorm"
+    enable_gen_model: "true"
+    enable_redis: "true"
+    enable_cache: "true"
+    enable_idempotent: "true"
+    enable_action: "false"
+    enable_user_group: "false"
+    enable_whitelist: "true"
+    enable_hotspot: "false"
+    enable_captcha: "false"
+    enable_user_lock: "false"
+    enable_ws: "false"
+    enable_task: "false"
+    middlewares: "header"
+    enable_trace: "true"
+    enable_reason_proto: "true"
+    enable_i18n: "false"
+
+  # Default preset: Enterprise-grade auth with all features
+  default:
+    service_name: ""
+    module_name: ""
+    http_port: "8080"
+    grpc_port: "8180"
+    enable_health_check: "true"
+    db_type: "postgres"
+    orm_type: "gorm"
+    enable_gen_model: "true"
+    enable_redis: "true"
+    enable_cache: "true"
+    enable_idempotent: "true"
+    enable_action: "true"
+    enable_user_group: "true"
+    enable_whitelist: "true"
+    enable_hotspot: "true"
+    enable_captcha: "true"
+    enable_user_lock: "true"
+    enable_ws: "false"
+    enable_task: "true"
+    middlewares: "header"
+    enable_trace: "true"
+    enable_reason_proto: "true"
+    enable_i18n: "true"
