@@ -12,4 +12,3 @@ func HealthHandler(svc *service.{{ .Computed.service_name_capitalized }}Service)
 	mux.HandleFunc("/healthz", svc.HealthCheck)
 	return mux
 }
-

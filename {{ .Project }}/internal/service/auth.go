@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 
+	"go.opentelemetry.io/otel"
+
 	"{{ .Computed.common_module_final }}/copierx"
 	"{{ .Computed.common_module_final }}/jwt"
 	{{- if .Computed.enable_hotspot_final }}
@@ -47,6 +49,7 @@ type {{ .Computed.service_name_capitalized }}Service struct {
 	{{- if .Computed.enable_hotspot_final }}
 	hotspot biz.HotspotRepo
 	{{- end }}
+	health biz.HealthRepo
 }
 
 // New{{ .Computed.service_name_capitalized }}Service creates a new service instance.
@@ -68,6 +71,7 @@ func New{{ .Computed.service_name_capitalized }}Service(
 	{{- if .Computed.enable_hotspot_final }}
 	hotspot biz.HotspotRepo,
 	{{- end }}
+	health biz.HealthRepo,
 ) *{{ .Computed.service_name_capitalized }}Service {
 	return &{{ .Computed.service_name_capitalized }}Service{
 		c:          c,
@@ -87,28 +91,26 @@ func New{{ .Computed.service_name_capitalized }}Service(
 		{{- if .Computed.enable_hotspot_final }}
 		hotspot: hotspot,
 		{{- end }}
+		health: health,
 	}
 }
 
 func (s *{{ .Computed.service_name_capitalized }}Service) flushCache(ctx context.Context) {
-	if s.user != nil {
-		s.user.FlushCache(ctx)
-	}
+	s.user.FlushCache(ctx)
 	{{- if .Computed.enable_hotspot_final }}
-	if s.hotspot != nil {
-		if err := s.hotspot.Refresh(ctx); err != nil {
-			log.WithContext(ctx).WithError(err).Warn("refresh hotspot failed")
-		}
+	if err := s.hotspot.Refresh(ctx); err != nil {
+		log.WithContext(ctx).WithError(err).Warn("refresh hotspot failed")
 	}
 	{{- end }}
 }
 
 func (s *{{ .Computed.service_name_capitalized }}Service) Register(ctx context.Context, req *v1.RegisterRequest) (*emptypb.Empty, error) {
-	if s.user == nil {
-		return nil, biz.ErrInternal(ctx, "user usecase not configured")
-	}
+	tr := otel.Tracer("service")
+	ctx, span := tr.Start(ctx, "Register")
+	defer span.End()
+
 	r := &biz.User{}
-	_ = copierx.Copy(&r, req)
+	copierx.Copy(&r, req)
 
 	{{- if .Computed.enable_captcha_final }}
 	// Skip captcha verification if configured.
@@ -127,11 +129,12 @@ func (s *{{ .Computed.service_name_capitalized }}Service) Register(ctx context.C
 }
 
 func (s *{{ .Computed.service_name_capitalized }}Service) Pwd(ctx context.Context, req *v1.PwdRequest) (*emptypb.Empty, error) {
-	if s.user == nil {
-		return nil, biz.ErrInternal(ctx, "user usecase not configured")
-	}
+	tr := otel.Tracer("service")
+	ctx, span := tr.Start(ctx, "Pwd")
+	defer span.End()
+
 	r := &biz.User{}
-	_ = copierx.Copy(&r, req)
+	copierx.Copy(&r, req)
 	if err := s.user.Pwd(ctx, r); err != nil {
 		return nil, err
 	}
@@ -140,16 +143,13 @@ func (s *{{ .Computed.service_name_capitalized }}Service) Pwd(ctx context.Contex
 }
 
 func (s *{{ .Computed.service_name_capitalized }}Service) Login(ctx context.Context, req *v1.LoginRequest) (*v1.LoginReply, error) {
-	if req == nil {
-		return nil, biz.ErrIllegalParameter(ctx, "req")
-	}
-	if s.user == nil {
-		return nil, biz.ErrInternal(ctx, "user usecase not configured")
-	}
+	tr := otel.Tracer("service")
+	ctx, span := tr.Start(ctx, "Login")
+	defer span.End()
 
 	{{- if or .Computed.enable_captcha_final .Computed.enable_user_lock_final .Computed.enable_hotspot_final }}
 	r := &biz.Login{}
-	_ = copierx.Copy(&r, req)
+	copierx.Copy(&r, req)
 
 	res, err := s.user.Login(ctx, r)
 	if err != nil {
@@ -175,27 +175,24 @@ func (s *{{ .Computed.service_name_capitalized }}Service) Login(ctx context.Cont
 				Wrong: res.Wrong,
 				{{- end }}
 			}
-			_ = s.user.WrongPwd(ctx, &loginTime)
+			s.user.WrongPwd(ctx, &loginTime)
 			s.flushCache(ctx)
 		}
 		return nil, err
 	}
 
 	// Successful login: update last_login and reset wrong/locked flags.
-	_ = s.user.LastLogin(ctx, req.Username)
+	s.user.LastLogin(ctx, req.Username)
 	s.flushCache(ctx)
 
 	rp := &v1.LoginReply{}
-	_ = copierx.Copy(&rp, res)
+	copierx.Copy(&rp, res)
 	return rp, nil
 	{{- else }}
 	// Standard preset: use AuthUseCase (no captcha/lock flows).
-	if s.uc == nil {
-		return nil, biz.ErrInternal(ctx, "auth usecase not configured")
-	}
 	loginReq := &biz.LoginRequest{
-		Username: req.Username,
-		Password: req.Password,
+		Username: req.GetUsername(),
+		Password: req.GetPassword(),
 	}
 	if req.Platform != nil {
 		loginReq.Platform = *req.Platform
@@ -204,28 +201,30 @@ func (s *{{ .Computed.service_name_capitalized }}Service) Login(ctx context.Cont
 	if err != nil {
 		return nil, err
 	}
-	_ = s.user.LastLogin(ctx, req.Username)
+	s.user.LastLogin(ctx, req.Username)
 
 	rp := &v1.LoginReply{}
-	_ = copierx.Copy(&rp, res)
+	copierx.Copy(&rp, res)
 	return rp, nil
 	{{- end }}
 }
 
-func (*{{ .Computed.service_name_capitalized }}Service) Logout(context.Context, *emptypb.Empty) (*emptypb.Empty, error) {
+func (s *{{ .Computed.service_name_capitalized }}Service) Logout(ctx context.Context, _ *emptypb.Empty) (*emptypb.Empty, error) {
+	tr := otel.Tracer("service")
+	_, span := tr.Start(ctx, "Logout")
+	defer span.End()
+
 	return &emptypb.Empty{}, nil
 }
 
 func (s *{{ .Computed.service_name_capitalized }}Service) Refresh(ctx context.Context, req *v1.RefreshRequest) (*v1.LoginReply, error) {
-	if req == nil {
-		return nil, biz.ErrIllegalParameter(ctx, "token")
-	}
-	tokenStr := strings.TrimSpace(req.Token)
+	tr := otel.Tracer("service")
+	ctx, span := tr.Start(ctx, "Refresh")
+	defer span.End()
+
+	tokenStr := strings.TrimSpace(req.GetToken())
 	if tokenStr == "" {
 		return nil, biz.ErrJwtMissingToken(ctx)
-	}
-	if s.c == nil {
-		return nil, biz.ErrInternal(ctx, "config not configured")
 	}
 
 	info, err := parseToken(ctx, s.c.Server.Jwt.Key, tokenStr)
@@ -256,26 +255,25 @@ func (s *{{ .Computed.service_name_capitalized }}Service) Refresh(ctx context.Co
 
 {{- if .Computed.enable_captcha_final }}
 func (s *{{ .Computed.service_name_capitalized }}Service) Captcha(ctx context.Context, _ *emptypb.Empty) (*v1.CaptchaReply, error) {
-	if s.user == nil {
-		return nil, biz.ErrInternal(ctx, "user usecase not configured")
-	}
+	tr := otel.Tracer("service")
+	ctx, span := tr.Start(ctx, "Captcha")
+	defer span.End()
+
 	res := s.user.Captcha(ctx)
 	rp := &v1.CaptchaReply{
 		Captcha: &v1.Captcha{},
 	}
-	_ = copierx.Copy(&rp.Captcha, &res)
+	copierx.Copy(&rp.Captcha, &res)
 	return rp, nil
 }
 {{- end }}
 
 func (s *{{ .Computed.service_name_capitalized }}Service) Status(ctx context.Context, req *v1.StatusRequest) (*v1.StatusReply, error) {
-	if req == nil {
-		return nil, biz.ErrIllegalParameter(ctx, "username")
-	}
-	if s.user == nil {
-		return nil, biz.ErrInternal(ctx, "user usecase not configured")
-	}
-	res, err := s.user.Status(ctx, req.Username, true)
+	tr := otel.Tracer("service")
+	ctx, span := tr.Start(ctx, "Status")
+	defer span.End()
+
+	res, err := s.user.Status(ctx, req.GetUsername(), true)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +287,7 @@ func (s *{{ .Computed.service_name_capitalized }}Service) Status(ctx context.Con
 	{{- if .Computed.enable_captcha_final }}
 	if res.NeedCaptcha {
 		rp.Captcha = &v1.Captcha{}
-		_ = copierx.Copy(&rp.Captcha, &res.Captcha)
+		copierx.Copy(&rp.Captcha, &res.Captcha)
 	}
 	{{- end }}
 	return rp, nil

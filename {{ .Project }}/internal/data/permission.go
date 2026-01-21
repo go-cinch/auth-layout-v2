@@ -8,6 +8,7 @@ import (
 
 	"{{ .Computed.common_module_final }}/copierx"
 	"{{ .Computed.common_module_final }}/log"
+	"go.opentelemetry.io/otel"
 	"gorm.io/gorm"
 
 	"{{ .Computed.module_name_final }}/internal/biz"
@@ -24,13 +25,17 @@ func NewPermissionRepo(data *Data) biz.PermissionRepo {
 	}
 }
 
-// GetUserPermissions returns all actions a user can access.
+// FindUserPermissions returns all actions a user can access.
 // Permissions are aggregated from:
 // - default action (word = "default") if present
 // - user.action
 // - role.action (via user.role_id)
 // - user_group.action (via user_user_group_relation) {{ if .Computed.enable_user_group_final }}(enabled){{ else }}(optional){{ end }}
-func (ro permissionRepo) GetUserPermissions(ctx context.Context, userID uint64) (rp []*biz.Action, err error) {
+func (ro permissionRepo) FindUserPermissions(ctx context.Context, userID int64) (rp []*biz.Action, err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "FindUserPermissions")
+	defer span.End()
+
 	rp = make([]*biz.Action, 0)
 
 	codes, err := ro.getUserActionCodes(ctx, userID)
@@ -52,10 +57,7 @@ func (ro permissionRepo) GetUserPermissions(ctx context.Context, userID uint64) 
 	// Preserve code order.
 	byCode := make(map[string]model.Action, len(list))
 	for _, m := range list {
-		if m.Code == nil {
-			continue
-		}
-		c := strings.TrimSpace(*m.Code)
+		c := strings.TrimSpace(m.Code)
 		if c == "" {
 			continue
 		}
@@ -82,7 +84,11 @@ func (ro permissionRepo) GetUserPermissions(ctx context.Context, userID uint64) 
 // If method is empty, resource is treated as a gRPC operation (exact match).
 // If method is not empty, resource is treated as an HTTP URI, and action rules
 // are matched using the "METHODS|URI_PATTERN" format (see action.resource).
-func (ro permissionRepo) CheckPermission(ctx context.Context, userID uint64, resource, method string) (ok bool, err error) {
+func (ro permissionRepo) CheckPermission(ctx context.Context, userID int64, resource, method string) (ok bool, err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "CheckPermission")
+	defer span.End()
+
 	resource = strings.TrimSpace(resource)
 	method = strings.TrimSpace(method)
 
@@ -130,7 +136,7 @@ func (ro permissionRepo) CheckPermission(ctx context.Context, userID uint64, res
 	return false, nil
 }
 
-func (ro permissionRepo) getUserActionCodes(ctx context.Context, userID uint64) (codes []string, err error) {
+func (ro permissionRepo) getUserActionCodes(ctx context.Context, userID int64) (codes []string, err error) {
 	if userID == 0 {
 		return nil, biz.ErrIllegalParameter(ctx, "userID")
 	}
@@ -156,8 +162,8 @@ func (ro permissionRepo) getUserActionCodes(ctx context.Context, userID uint64) 
 	def, defErr := gorm.G[model.Action](ro.data.DB(ctx)).
 		Where("word = ?", "default").
 		First(ctx)
-	if defErr == nil && def.Code != nil {
-		addUnique([]string{*def.Code})
+	if defErr == nil && def.Code != "" {
+		addUnique([]string{def.Code})
 	} else if defErr != nil && !errors.Is(defErr, gorm.ErrRecordNotFound) {
 		log.WithContext(ctx).WithError(defErr).Error("get default action failed")
 		return nil, defErr
@@ -205,14 +211,14 @@ func (ro permissionRepo) getUserActionCodes(ctx context.Context, userID uint64) 
 		return codes, nil
 	}
 
-	groupIDs := make([]uint64, 0, len(rels))
+	groupIDs := make([]int64, 0, len(rels))
 	for _, rel := range rels {
-		if rel.UserGroupID == nil || *rel.UserGroupID == 0 {
+		if rel.UserGroupID == 0 {
 			continue
 		}
-		groupIDs = append(groupIDs, *rel.UserGroupID)
+		groupIDs = append(groupIDs, rel.UserGroupID)
 	}
-	groupIDs = permissionUniqueUint64(groupIDs)
+	groupIDs = permissionUniqueInt64(groupIDs)
 	if len(groupIDs) == 0 {
 		return codes, nil
 	}
@@ -333,12 +339,12 @@ func permissionSplitComma(s string) []string {
 	return out
 }
 
-func permissionUniqueUint64(ids []uint64) []uint64 {
+func permissionUniqueInt64(ids []int64) []int64 {
 	if len(ids) == 0 {
 		return nil
 	}
-	out := make([]uint64, 0, len(ids))
-	seen := make(map[uint64]struct{}, len(ids))
+	out := make([]int64, 0, len(ids))
+	seen := make(map[int64]struct{}, len(ids))
 	for _, id := range ids {
 		if id == 0 {
 			continue
@@ -351,4 +357,3 @@ func permissionUniqueUint64(ids []uint64) []uint64 {
 	}
 	return out
 }
-

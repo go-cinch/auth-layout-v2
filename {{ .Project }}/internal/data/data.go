@@ -54,12 +54,6 @@ func NewData(c *conf.Bootstrap) (*Data, func(), error) {
 // NewDB initializes tenant-aware database connection using tenant v2 package.
 // Supports both MySQL and PostgreSQL via internal driver detection.
 func NewDB(c *conf.Bootstrap) (*tenant.Tenant, error) {
-	if c == nil || c.Db == nil {
-		err := errors.New("db config is required")
-		log.WithError(err).Error("initialize db failed")
-		return nil, err
-	}
-
 	dbConf := c.Db
 	driver := strings.ToLower(strings.TrimSpace(dbConf.Driver))
 	dsn := strings.TrimSpace(dbConf.Dsn)
@@ -144,8 +138,8 @@ func NewTransaction(d *Data) biz.Transaction {
 }
 
 // ID generates a unique distributed ID using Sonyflake.
-func (d *Data) ID(ctx context.Context) uint64 {
-	return d.sonyflake.ID(ctx)
+func (d *Data) ID(ctx context.Context) int64 {
+	return int64(d.sonyflake.ID(ctx))
 }
 
 // NewSonyflake initializes the Sonyflake ID generator.
@@ -200,12 +194,6 @@ func NewRedis(c *conf.Bootstrap) (redis.UniversalClient, error) {
 
 // newRedis is the shared Redis initialization logic.
 func newRedis(c *conf.Bootstrap) (client redis.UniversalClient, err error) {
-	if c == nil || c.Redis == nil || c.Redis.Dsn == "" {
-		err = errors.New("redis config is required")
-		log.WithError(err).Error("initialize redis failed")
-		return
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var u *url.URL
@@ -250,6 +238,7 @@ var ProviderSet = wire.NewSet(
 	{{- end }}
 	NewCache,
 	NewTransaction,
+	NewHealthRepo,
 	NewAuthRepo,
 	NewUserRepo,
 	NewRoleRepo,

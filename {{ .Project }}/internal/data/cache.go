@@ -472,4 +472,3 @@ func (c *Cache) getLockKey(ctx context.Context, action string) string {
 	}
 	return strings.Join([]string{id, c.prefix, c.lock, action}, "_")
 }
-

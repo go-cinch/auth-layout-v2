@@ -4,10 +4,11 @@ import (
 	"context"
 	"strings"
 
+	"go.opentelemetry.io/otel"
+	"gorm.io/gorm"
 	"{{ .Computed.common_module_final }}/copierx"
 	"{{ .Computed.common_module_final }}/log"
 	"{{ .Computed.common_module_final }}/utils"
-	"gorm.io/gorm"
 
 	"{{ .Computed.module_name_final }}/internal/biz"
 	"{{ .Computed.module_name_final }}/internal/data/model"
@@ -24,12 +25,16 @@ func NewRoleRepo(data *Data) biz.RoleRepo {
 }
 
 func (ro roleRepo) Create(ctx context.Context, item *biz.Role) (err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Create")
+	defer span.End()
+
 	// Check word uniqueness
 	count, err := gorm.G[model.Role](ro.data.DB(ctx)).
 		Where("word = ?", item.Word).
 		Count(ctx, "*")
 	if err != nil {
-		log.WithError(err).Error("check role word exists failed")
+		log.WithContext(ctx).WithError(err).Error("check role word exists failed")
 		return err
 	}
 	if count > 0 {
@@ -48,12 +53,16 @@ func (ro roleRepo) Create(ctx context.Context, item *biz.Role) (err error) {
 	copierx.Copy(&m, item)
 	err = gorm.G[model.Role](ro.data.DB(ctx)).Create(ctx, &m)
 	if err != nil {
-		log.WithError(err).Error("create role failed")
+		log.WithContext(ctx).WithError(err).Error("create role failed")
 	}
 	return err
 }
 
 func (ro roleRepo) Update(ctx context.Context, item *biz.UpdateRole) (err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Update")
+	defer span.End()
+
 	db := gorm.G[model.Role](ro.data.DB(ctx))
 
 	m, err := db.Where("id = ?", item.ID).First(ctx)
@@ -61,7 +70,7 @@ func (ro roleRepo) Update(ctx context.Context, item *biz.UpdateRole) (err error)
 		return biz.ErrRecordNotFound(ctx)
 	}
 	if err != nil {
-		log.WithError(err).Error("get role failed")
+		log.WithContext(ctx).WithError(err).Error("get role failed")
 		return err
 	}
 
@@ -75,7 +84,7 @@ func (ro roleRepo) Update(ctx context.Context, item *biz.UpdateRole) (err error)
 	if item.Word != nil && (m.Word == nil || *item.Word != *m.Word) {
 		count, err := db.Where("word = ? AND id != ?", *item.Word, item.ID).Count(ctx, "*")
 		if err != nil {
-			log.WithError(err).Error("check role word uniqueness failed")
+			log.WithContext(ctx).WithError(err).Error("check role word uniqueness failed")
 			return err
 		}
 		if count > 0 {
@@ -97,22 +106,30 @@ func (ro roleRepo) Update(ctx context.Context, item *biz.UpdateRole) (err error)
 		Updates(change).
 		Error
 	if err != nil {
-		log.WithError(err).Error("update role failed")
+		log.WithContext(ctx).WithError(err).Error("update role failed")
 	}
 	return err
 }
 
-func (ro roleRepo) Delete(ctx context.Context, ids ...uint64) (err error) {
+func (ro roleRepo) Delete(ctx context.Context, ids ...int64) (err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Delete")
+	defer span.End()
+
 	_, err = gorm.G[model.Role](ro.data.DB(ctx)).
 		Where("id IN ?", ids).
 		Delete(ctx)
 	if err != nil {
-		log.WithError(err).Error("delete role failed")
+		log.WithContext(ctx).WithError(err).Error("delete role failed")
 	}
 	return err
 }
 
 func (ro roleRepo) Find(ctx context.Context, condition *biz.FindRole) (rp []biz.Role) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Find")
+	defer span.End()
+
 	rp = make([]biz.Role, 0)
 
 	q := gorm.G[model.Role](ro.data.DB(ctx)).Where("1 = 1")
@@ -130,7 +147,7 @@ func (ro roleRepo) Find(ctx context.Context, condition *biz.FindRole) (rp []biz.
 	if !condition.Page.Disable {
 		count, err := q.Count(ctx, "*")
 		if err != nil {
-			log.WithError(err).Error("count role failed")
+			log.WithContext(ctx).WithError(err).Error("count role failed")
 			return rp
 		}
 		condition.Page.Total = count
@@ -147,7 +164,7 @@ func (ro roleRepo) Find(ctx context.Context, condition *biz.FindRole) (rp []biz.
 
 	list, err := q.Find(ctx)
 	if err != nil {
-		log.WithError(err).Error("find role failed")
+		log.WithContext(ctx).WithError(err).Error("find role failed")
 		return rp
 	}
 	copierx.Copy(&rp, list)
@@ -155,7 +172,7 @@ func (ro roleRepo) Find(ctx context.Context, condition *biz.FindRole) (rp []biz.
 	for i := range rp {
 		actions, err := ro.getActionsByCode(ctx, rp[i].Action)
 		if err != nil {
-			log.WithError(err).Error("get role actions failed")
+			log.WithContext(ctx).WithError(err).Error("get role actions failed")
 			continue
 		}
 		rp[i].Actions = actions
@@ -177,12 +194,12 @@ func (ro roleRepo) validateActionCodes(ctx context.Context, codes string) (err e
 	for _, code := range arr {
 		count, err := db.Where("code = ?", code).Count(ctx, "*")
 		if err != nil {
-			log.WithError(err).Error("check action code exists failed")
+			log.WithContext(ctx).WithError(err).Error("check action code exists failed")
 			return err
 		}
 		if count == 0 {
 			err = biz.ErrRecordNotFound(ctx)
-			log.WithError(err).Error("invalid code: %s", code)
+			log.WithContext(ctx).WithError(err).Error("invalid code: %s", code)
 			return err
 		}
 	}
@@ -204,7 +221,7 @@ func (ro roleRepo) getActionsByCode(ctx context.Context, code string) (rp []biz.
 		Where("code IN ?", codes).
 		Find(ctx)
 	if err != nil {
-		log.WithError(err).Error("find actions by code failed")
+		log.WithContext(ctx).WithError(err).Error("find actions by code failed")
 		return nil, err
 	}
 	copierx.Copy(&rp, list)
@@ -223,4 +240,3 @@ func (roleRepo) splitCodes(code string) []string {
 	}
 	return out
 }
-

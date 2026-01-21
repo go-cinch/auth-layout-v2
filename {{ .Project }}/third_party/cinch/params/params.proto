@@ -5,8 +5,8 @@ package params;
 option go_package = "{{.Computed.common_module_final}}/proto/params;params";
 
 message Page {
-  uint64 num = 1;
-  uint64 size = 2;
+  int64 num = 1;
+  int64 size = 2;
   int64 total = 3;
   bool disable = 4;
 }

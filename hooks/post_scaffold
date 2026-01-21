@@ -1,0 +1,127 @@
+#!/bin/bash
+# Post-scaffold hook to initialize project and generate code
+
+PROJECT_NAME="{{ .Computed.service_name_final }}"
+PROJECT_DIR="{{ .Project }}"
+ORM_TYPE="{{ .Computed.orm_type_final }}"
+ENABLE_GEN_MODEL="{{ .Computed.enable_gen_model_final }}"
+
+# Track failed steps
+FAILED_STEPS=()
+
+# Change to project directory
+cd "$PROJECT_DIR"
+
+echo ""
+echo "=========================================="
+echo "Post-scaffold: Initializing $PROJECT_NAME"
+echo "=========================================="
+echo "Working in: $(pwd)"
+echo ""
+
+# Rename migration files with timestamp
+if [ -d "./internal/db/migrations" ]; then
+    TIMESTAMP=$(date +"%Y%m%d%H")
+    find ./internal/db/migrations -type f -name "YYYYMMDDHH-*.sql" 2>/dev/null | while read -r file; do
+        newfile="${file/YYYYMMDDHH/$TIMESTAMP}"
+        if [ -f "$file" ] && [ ! -f "$newfile" ]; then
+            mv "$file" "$newfile"
+            echo "Renamed migration: $(basename $file) -> $(basename $newfile)"
+        fi
+    done
+fi
+
+# Generate random JWT key
+JWT_KEY=$(uuidgen | tr -d '-')
+if [ -n "$JWT_KEY" ] && [ -f "./configs/server.yaml" ]; then
+    sed -i.bak "s/your-secret-key-change-me-in-production-min-32-chars/$JWT_KEY/g" ./configs/server.yaml
+    rm -f ./configs/server.yaml.bak
+    echo "Generated random JWT key"
+fi
+
+echo ""
+echo "Step 1/5: Installing tools..."
+echo "-------------------------------------------"
+if make init; then
+    echo "✓ Tools installed"
+else
+    echo "✗ Tool installation failed"
+    FAILED_STEPS+=("make init")
+fi
+
+echo ""
+echo "Step 2/5: Creating database..."
+echo "-------------------------------------------"
+if make gen-createdb; then
+    echo "✓ Database ready"
+else
+    echo "⚠️  Database creation failed (may already exist or container not running)"
+    FAILED_STEPS+=("make gen-createdb")
+fi
+
+echo ""
+echo "Step 3/5: Running migrations..."
+echo "-------------------------------------------"
+if make gen-up; then
+    echo "✓ Migrations applied"
+else
+    echo "⚠️  Migration failed"
+    FAILED_STEPS+=("make gen-up")
+fi
+
+# Generate models only if enabled and using gorm
+if [ "$ENABLE_GEN_MODEL" = "true" ] && [ "$ORM_TYPE" = "gorm" ]; then
+    echo ""
+    echo "Step 4/5: Generating GORM models..."
+    echo "-------------------------------------------"
+    if make gen-model; then
+        echo "✓ Models generated"
+        echo "Generated models:"
+        ls -1 internal/data/model/*.gen.go 2>/dev/null | sed 's/^/  /' || echo "  (no .gen.go files found)"
+    else
+        echo "⚠️  Model generation failed"
+        FAILED_STEPS+=("make gen-model")
+    fi
+else
+    echo ""
+    echo "Step 4/5: Skipping model generation (disabled or not using gorm)"
+    echo "-------------------------------------------"
+fi
+
+echo ""
+echo "Step 5/5: Generating proto and building..."
+echo "-------------------------------------------"
+if make all; then
+    echo "✓ Build completed"
+else
+    echo "✗ Build failed"
+    FAILED_STEPS+=("make all")
+fi
+
+echo ""
+echo "=========================================="
+
+# Check if any steps failed
+if [ ${#FAILED_STEPS[@]} -gt 0 ]; then
+    echo "⚠️  Project $PROJECT_NAME created with errors"
+    echo "=========================================="
+    echo ""
+    echo "Some steps failed. Please run the following commands manually:"
+    echo ""
+    echo "  cd $PROJECT_DIR"
+    for step in "${FAILED_STEPS[@]}"; do
+        echo "  $step"
+    done
+    echo ""
+    echo "Or run all steps at once:"
+    echo "  cd $PROJECT_DIR && make init && make gen-createdb && make gen-up && make gen-model && make all"
+    echo ""
+else
+    echo "✓ Project $PROJECT_NAME initialized!"
+    echo "=========================================="
+    echo ""
+    echo "Next steps:"
+    echo "  cd $PROJECT_DIR"
+    echo "  make run     # Start the service"
+    echo ""
+fi

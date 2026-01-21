@@ -13,4 +13,3 @@ func NewWSHandler(svc *service.{{ .Computed.service_name_capitalized }}Service) 
 
 	return mux
 }
-

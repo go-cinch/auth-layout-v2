@@ -6,11 +6,11 @@ A production-ready authentication and authorization microservice template genera
 
 - 🔐 **JWT Authentication**: Token-based authentication with signature verification
 - 👥 **RBAC Authorization**: Role-Based Access Control (User/Role/Permission)
-- 🎯 **Flexible Authorization Models**: Optional fine-grained Action-based permissions
-- 🔧 **Pluggable Features**: Multiple presets and customizable auth modules
+- 🎯 **Fine-grained Permissions**: Action-based resource permissions
+- 👨‍👩‍👧‍👦 **User Groups**: Group-based user management
 - 💉 **Dependency Injection**: Wire-based automatic code generation
 - 🗄️ **Database Support**: PostgreSQL/MySQL with GORM ORM
-- 🚀 **Redis Caching**: Multi-layer cache with hotspot optimization (optional)
+- 🚀 **Redis Caching**: Multi-layer cache with hotspot optimization
 - 🛡️ **Security Features**: Captcha, user lock, whitelist, password hashing (bcrypt)
 - 📊 **Observability**: OpenTelemetry tracing support
 - 🚦 **Production Ready**: Health checks, middleware, i18n, task scheduling
@@ -25,20 +25,16 @@ go install github.com/hay-kot/scaffold@v0.12.0
 
 ### 2. Create Auth Service
 
-#### Using Presets (Recommended)
+#### Using Default Preset (Recommended)
 
-Presets provide pre-configured auth service settings:
-
-##### Simple Preset - Core RBAC
-
-Simple RBAC with User/Role/Permission and Redis caching:
+Enterprise-grade auth service with all features:
 
 ```bash
 scaffold new https://github.com/go-cinch/auth-layout-v2 \
   --output-dir=. \
   --run-hooks=always \
   --no-prompt \
-  --preset simple \
+  --preset default \
   Project=myauth
 ```
 
@@ -47,17 +43,19 @@ scaffold new https://github.com/go-cinch/auth-layout-v2 \
 - ✅ User CRUD with password management (bcrypt)
 - ✅ Role management
 - ✅ Permission management
-- ✅ Basic whitelist (URI + JWT whitelist)
+- ✅ Action module (fine-grained resource permissions)
+- ✅ UserGroup module (group-based user management)
+- ✅ Enhanced whitelist (permission + JWT + category matching)
+- ✅ Hotspot cache (in-memory hot data with go-cache)
+- ✅ Captcha (login verification code with Redis)
+- ✅ User lock mechanism (auto-lock after 3 wrong passwords)
 - ✅ Redis caching
 - ✅ Permission middleware
 - ✅ Idempotent middleware
 - ✅ OpenTelemetry tracing
 - ✅ Health check endpoints
-- ❌ No Action (fine-grained permissions)
-- ❌ No UserGroup
-- ❌ No Hotspot cache optimization
-- ❌ No Captcha/User lock
-- 📦 Database tables: 4 (user, role, permission, whitelist)
+- ✅ i18n support for error messages
+- 📦 Database tables: 7 (user, role, action, user_group, user_user_group_relation, whitelist, schema_migrations)
 
 **Generated Structure:**
 ```
@@ -66,126 +64,11 @@ myauth/
 ├── cmd/myauth/          # Application entry point
 ├── configs/             # Configuration files (db, redis, log, etc.)
 ├── internal/
-│   ├── biz/            # Business logic (User/Role/Permission/Auth)
+│   ├── biz/            # Business logic (User/Role/Action/Permission/Auth)
 │   ├── data/           # Data access layer with GORM
 │   ├── server/         # HTTP/gRPC servers + middleware
 │   └── service/        # Service implementations
 └── Makefile            # Build automation
-```
-
-##### Default Preset - Enterprise Auth
-
-Enterprise-grade auth service with all advanced features:
-
-```bash
-scaffold new https://github.com/go-cinch/auth-layout-v2 \
-  --output-dir=. \
-  --run-hooks=always \
-  --no-prompt \
-  --preset default \
-  Project=myauth
-```
-
-**Features (Simple +):**
-- ✅ All Simple preset features
-- ✅ Action module (fine-grained resource permissions)
-- ✅ UserGroup module (group-based user management)
-- ✅ Enhanced whitelist (permission + JWT + category matching)
-- ✅ Hotspot cache (in-memory hot data with go-cache)
-- ✅ Captcha (login verification code with Redis)
-- ✅ User lock mechanism (auto-lock after 3 wrong passwords)
-- ✅ i18n support for error messages
-- 📦 Database tables: 7 (+ action, user_group, extended whitelist)
-
-### 3. Presets Comparison
-
-| Feature | Simple | Default |
-|---------|----------|------|
-| **Authentication** | ✅ JWT (HS512) | ✅ |
-| **User Management** | ✅ CRUD + Password | ✅ |
-| **RBAC** | ✅ User/Role/Permission | ✅ |
-| **Fine-grained Permissions** | ❌ | ✅ Action module |
-| **User Groups** | ❌ | ✅ UserGroup |
-| **Whitelist** | ✅ Basic | ✅ Enhanced |
-| **Caching** | ✅ Redis basic | ✅ + Hotspot optimization |
-| **Security Features** | ❌ | ✅ Captcha + User Lock |
-| **Permission Middleware** | ✅ | ✅ |
-| **Idempotent Middleware** | ✅ | ✅ |
-| **OpenTelemetry Tracing** | ✅ | ✅ |
-| **i18n Support** | ❌ | ✅ |
-| **Database Tables** | 4 | 7 |
-| **Use Case** | Simple apps | Enterprise/Multi-tenant |
-
-### 4. Customization
-
-#### Override Preset Options
-
-You can override specific preset options:
-
-```bash
-# Enable Captcha on simple preset
-scaffold new https://github.com/go-cinch/auth-layout-v2 \
-  --preset simple \
-  Project=myauth \
-  enable_captcha=true
-
-# Use MySQL instead of PostgreSQL
-scaffold new https://github.com/go-cinch/auth-layout-v2 \
-  --preset simple \
-  Project=myauth \
-  db_type=mysql
-
-# Change HTTP/gRPC ports
-scaffold new https://github.com/go-cinch/auth-layout-v2 \
-  --preset default \
-  Project=myauth \
-  http_port=9090 \
-  grpc_port=9190
-
-# Enable Action module without default preset
-scaffold new https://github.com/go-cinch/auth-layout-v2 \
-  --preset simple \
-  Project=myauth \
-  enable_action=true
-```
-
-#### Available Auth-Specific Options
-
-| Option | Values | Default | Description |
-|--------|--------|---------|-------------|
-| `enable_action` | `true`/`false` | simple=false, default=true | Fine-grained resource permissions |
-| `enable_user_group` | `true`/`false` | simple=false, default=true | Group-based user management |
-| `enable_whitelist` | `true`/`false` | both=true | Permission and JWT whitelist |
-| `enable_hotspot` | `true`/`false` | simple=false, default=true | Hotspot cache optimization |
-| `enable_captcha` | `true`/`false` | simple=false, default=true | Captcha verification code |
-| `enable_user_lock` | `true`/`false` | simple=false, default=true | Lock user after wrong passwords |
-
-#### General Options
-
-| Option | Values | Default | Description |
-|--------|--------|---------|-------------|
-| `service_name` | string | Project name | Service name |
-| `module_name` | string | service_name | Go module name |
-| `http_port` | string | `8080` | HTTP server port |
-| `grpc_port` | string | `8180` | gRPC server port |
-| `db_type` | `postgres`/`mysql` | `postgres` | Database type |
-| `enable_redis` | `true`/`false` | `true` | Enable Redis (required for auth) |
-| `enable_cache` | `true`/`false` | `true` | Enable cache layer |
-| `enable_idempotent` | `true`/`false` | `true` | Enable idempotent middleware |
-| `enable_trace` | `true`/`false` | `true` | Enable OpenTelemetry tracing |
-| `enable_ws` | `true`/`false` | `false` | Enable WebSocket support |
-| `enable_task` | `true`/`false` | `false` | Enable task/cron scheduler |
-| `enable_i18n` | `true`/`false` | default=true | Enable i18n support |
-
-### 5. Interactive Mode
-
-Answer prompts to configure all options:
-
-```bash
-scaffold new https://github.com/go-cinch/auth-layout-v2 \
-  --output-dir=. \
-  --run-hooks=always \
-  Project=myauth
 ```
 
 ## Building and Running
@@ -232,12 +115,12 @@ redis:
 
 ### 4. JWT Configuration
 
-**Configure in `configs/client.yaml`:**
+**Configure in `configs/server.yaml`:**
 ```yaml
 server:
   jwt:
     key: "your-secret-key-min-32-chars-long"  # HS512 signing key
-    expires: 7200  # Token expiration in seconds (2 hours)
+    expires: "24h"  # Token expiration duration
 ```
 
 ### 5. Build
@@ -255,7 +138,7 @@ make build  # Output: ./bin/myauth
 **Endpoints:**
 - HTTP: http://localhost:8080
 - gRPC: localhost:8180
-- Health: http://localhost:8080/health
+- Health: http://localhost:8080/healthz
 - Swagger: http://localhost:8080/docs (if enabled)
 
 ## Development Workflow
@@ -289,7 +172,7 @@ make clean
 
 **Request:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/auth/login \
+curl -X POST http://localhost:8080/pub/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "admin",
@@ -302,8 +185,7 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 ```json
 {
   "token": "eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9...",
-  "expires": "2025-01-16 13:00:00",
-  "wrong": 0
+  "expires": "2025-01-16 13:00:00"
 }
 ```
 
@@ -311,7 +193,7 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 
 **Request:**
 ```bash
-curl -X GET http://localhost:8080/api/v1/user/1 \
+curl -X GET http://localhost:8080/user/list \
   -H "Authorization: Bearer eyJhbGciOiJIUzUxMiIsInR5cCI6IkpXVCJ9..."
 ```
 
@@ -325,23 +207,12 @@ The permission middleware automatically:
 
 ## Authorization Models
 
-### Basic RBAC (Simple Preset)
+### Extended RBAC
 
 ```
-User ──belongsTo──> Role ──has──> Permission
-```
-
-**Example:**
-- User: `john@example.com`
-- Role: `editor`
-- Permissions: `POST|/api/v1/article`, `GET|/api/v1/article/*`
-
-### Extended RBAC (Default Preset)
-
-```
-User ──belongsTo──> Role ──has──> Permission
-User ──belongsTo──> UserGroup
-Permission ──uses──> Action (fine-grained resource control)
+User ──belongsTo──> Role ──has──> Action (permissions)
+User ──belongsTo──> UserGroup ──has──> Action (permissions)
+User ──has──> Action (direct permissions)
 ```
 
 **Example:**
@@ -354,24 +225,24 @@ Permission ──uses──> Action (fine-grained resource control)
 
 ### Password Handling
 
-- ✅ Passwords hashed with bcrypt (cost factor: 10)
+- ✅ Passwords hashed with bcrypt (cost factor: default)
 - ✅ Password comparison cached in Redis (short TTL)
 - ✅ Never return password in API responses
 
 ### JWT Security
 
 - ✅ HS512 signing algorithm (strong symmetric signing)
-- ✅ Token cached in Redis with 10-minute expiration
+- ✅ Token cached in Redis with configurable expiration
 - ✅ Token contains minimal claims (code, platform)
 - ⚠️ Use environment variables for JWT secret key
 
-### User Lock Mechanism (Default Preset)
+### User Lock Mechanism
 
 - ✅ Auto-lock after 3 wrong password attempts
 - ✅ Configurable lock duration
 - ✅ Automatic unlock on expiration
 
-### Captcha Protection (Default Preset)
+### Captcha Protection
 
 - ✅ Required after 3 wrong password attempts
 - ✅ Stored in Redis with expiration
@@ -426,7 +297,7 @@ cmd/main.go
 
 ## Database Schema
 
-### Simple Preset Tables
+### Core Tables
 
 ```sql
 -- User table
@@ -436,8 +307,12 @@ CREATE TABLE user (
   password VARCHAR(255) NOT NULL,
   code VARCHAR(50) UNIQUE,
   platform VARCHAR(50),
+  action TEXT,  -- comma-separated action codes
   role_id BIGINT REFERENCES role(id),
-  locked BOOLEAN DEFAULT FALSE,
+  locked SMALLINT DEFAULT 0,
+  lock_expire BIGINT,
+  wrong BIGINT DEFAULT 0,
+  last_login TIMESTAMP,
   created_at TIMESTAMP,
   updated_at TIMESTAMP
 );
@@ -445,39 +320,22 @@ CREATE TABLE user (
 -- Role table
 CREATE TABLE role (
   id BIGSERIAL PRIMARY KEY,
-  name VARCHAR(255) UNIQUE NOT NULL,
-  code VARCHAR(50) UNIQUE,
+  name VARCHAR(255) NOT NULL,
+  word VARCHAR(50) UNIQUE,
+  action TEXT,  -- comma-separated action codes
   created_at TIMESTAMP,
   updated_at TIMESTAMP
 );
 
--- Permission table
-CREATE TABLE permission (
-  id BIGSERIAL PRIMARY KEY,
-  role_id BIGINT REFERENCES role(id),
-  resource VARCHAR(255) NOT NULL,  -- e.g., "POST|/api/v1/user"
-  created_at TIMESTAMP,
-  updated_at TIMESTAMP
-);
-
--- Whitelist table
-CREATE TABLE whitelist (
-  id BIGSERIAL PRIMARY KEY,
-  category VARCHAR(50),  -- "permission" or "jwt"
-  resource VARCHAR(255) NOT NULL,
-  created_at TIMESTAMP,
-  updated_at TIMESTAMP
-);
-```
-
-### Default Preset Additional Tables
-
-```sql
 -- Action table (fine-grained permissions)
 CREATE TABLE action (
   id BIGSERIAL PRIMARY KEY,
-  code VARCHAR(100) UNIQUE NOT NULL,  -- e.g., "article:create"
+  code VARCHAR(100) UNIQUE NOT NULL,
   name VARCHAR(255),
+  word VARCHAR(100) UNIQUE,
+  resource TEXT,  -- permission rules (e.g., "GET,POST|/api/v1/user/*")
+  menu TEXT,
+  btn TEXT,
   created_at TIMESTAMP,
   updated_at TIMESTAMP
 );
@@ -485,8 +343,26 @@ CREATE TABLE action (
 -- UserGroup table
 CREATE TABLE user_group (
   id BIGSERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  word VARCHAR(100) UNIQUE,
+  action TEXT,  -- comma-separated action codes
+  created_at TIMESTAMP,
+  updated_at TIMESTAMP
+);
+
+-- User-UserGroup relation table
+CREATE TABLE user_user_group_relation (
+  id BIGSERIAL PRIMARY KEY,
   user_id BIGINT REFERENCES user(id),
-  group_code VARCHAR(100),
+  user_group_id BIGINT REFERENCES user_group(id),
+  UNIQUE(user_id, user_group_id)
+);
+
+-- Whitelist table
+CREATE TABLE whitelist (
+  id BIGSERIAL PRIMARY KEY,
+  category SMALLINT,  -- 0: permission whitelist, 1: JWT whitelist
+  resource VARCHAR(255) NOT NULL,
   created_at TIMESTAMP,
   updated_at TIMESTAMP
 );
@@ -522,7 +398,7 @@ make migrate
 **4. JWT token invalid**
 ```bash
 # Ensure JWT key is at least 32 characters
-# Check token expiration in configs/client.yaml
+# Check token expiration in configs/server.yaml
 ```
 
 ## Contributing

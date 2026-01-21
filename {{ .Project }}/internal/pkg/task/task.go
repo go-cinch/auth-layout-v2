@@ -23,10 +23,6 @@ var ProviderSet = wire.NewSet(New)
 
 // New initializes the task worker from config.
 func New(c *conf.Bootstrap, user *biz.UserUseCase{{ if .Computed.enable_hotspot_final }}, hotspot biz.HotspotRepo{{ end }}) (w *worker.Worker, err error) {
-	if c == nil || c.Redis == nil || c.Redis.Dsn == "" {
-		return nil, errors.New("redis config is required for tasks")
-	}
-
 	w = worker.New(
 		worker.WithRedisURI(c.Redis.Dsn),
 		worker.WithGroup(c.Name),
@@ -47,23 +43,18 @@ func New(c *conf.Bootstrap, user *biz.UserUseCase{{ if .Computed.enable_hotspot_
 		return nil, errors.New("initialize worker failed")
 	}
 
-	if c.Task != nil {
-		for id, item := range c.Task.Cron {
-			if item == nil {
-				continue
-			}
-			err = w.Cron(
-				context.Background(),
-				worker.WithRunUUID(id),
-				worker.WithRunGroup(item.Name),
-				worker.WithRunExpr(item.Expr),
-				worker.WithRunTimeout(int(item.Timeout)),
-				worker.WithRunMaxRetry(int(item.Retry)),
-			)
-			if err != nil {
-				log.Error(err)
-				return nil, errors.New("initialize worker failed")
-			}
+	for id, item := range c.Task.Cron {
+		err = w.Cron(
+			context.Background(),
+			worker.WithRunUUID(id),
+			worker.WithRunGroup(item.Name),
+			worker.WithRunExpr(item.Expr),
+			worker.WithRunTimeout(int(item.Timeout)),
+			worker.WithRunMaxRetry(int(item.Retry)),
+		)
+		if err != nil {
+			log.Error(err)
+			return nil, errors.New("initialize worker failed")
 		}
 	}
 
@@ -71,7 +62,7 @@ func New(c *conf.Bootstrap, user *biz.UserUseCase{{ if .Computed.enable_hotspot_
 
 	{{- if .Computed.enable_hotspot_final }}
 	// When app restart, clear hotspot (best-effort).
-	if c.Task != nil && c.Task.Group != nil && c.Task.Group.RefreshHotspotManual != "" {
+	if c.Task.Group.RefreshHotspotManual != "" {
 		_ = w.Once(
 			context.Background(),
 			worker.WithRunUUID(strings.Join([]string{c.Task.Group.RefreshHotspotManual}, ".")),
@@ -97,33 +88,22 @@ type task struct {
 
 func process(t task) (err error) {
 	tr := otel.Tracer("task")
-	ctx, span := tr.Start(t.ctx, "Task")
+	ctx, span := tr.Start(t.ctx, "process")
 	defer span.End()
-
-	if t.c == nil || t.c.Task == nil || t.c.Task.Group == nil {
-		log.WithContext(ctx).Warn("task config not loaded")
-		return nil
-	}
 
 	// Use task group to match tasks instead of UID.
 	switch t.payload.Group {
 	case t.c.Task.Group.LoginFailed:
 		var req biz.LoginTime
 		utils.JSON2Struct(&req, t.payload.Payload)
-		if t.user != nil {
-			err = t.user.WrongPwd(ctx, &req)
-		}
+		err = t.user.WrongPwd(ctx, &req)
 	case t.c.Task.Group.LoginLast:
 		var req biz.LoginTime
 		utils.JSON2Struct(&req, t.payload.Payload)
-		if t.user != nil {
-			err = t.user.LastLogin(ctx, req.Username)
-		}
+		err = t.user.LastLogin(ctx, req.Username)
 	{{- if .Computed.enable_hotspot_final }}
 	case t.c.Task.Group.RefreshHotspot, t.c.Task.Group.RefreshHotspotManual:
-		if t.hotspot != nil {
-			err = t.hotspot.Refresh(ctx)
-		}
+		err = t.hotspot.Refresh(ctx)
 	{{- end }}
 	default:
 		log.WithContext(ctx).Warn("unknown task group: %s", t.payload.Group)
@@ -139,4 +119,3 @@ import "github.com/google/wire"
 var ProviderSet = wire.NewSet()
 
 {{- end }}
-

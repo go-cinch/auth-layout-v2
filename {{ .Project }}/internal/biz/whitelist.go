@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"go.opentelemetry.io/otel"
+
 	"{{ .Computed.common_module_final }}/page/v2"
 	"{{ .Computed.common_module_final }}/utils"
 
@@ -18,7 +20,7 @@ const (
 )
 
 type Whitelist struct {
-	ID       uint64 `json:"id,string"`
+	ID       int64  `json:"id,string"`
 	Category int16  `json:"category"`
 	Resource string `json:"resource"`
 }
@@ -35,23 +37,9 @@ type FindWhitelistCache struct {
 }
 
 type UpdateWhitelist struct {
-	ID       uint64  `json:"id,string"`
+	ID       int64   `json:"id,string"`
 	Category *int16  `json:"category,omitempty"`
 	Resource *string `json:"resource,omitempty"`
-}
-
-type WhitelistRepo interface {
-	Create(ctx context.Context, item *Whitelist) error
-	Update(ctx context.Context, item *UpdateWhitelist) error
-	Delete(ctx context.Context, ids ...uint64) error
-	Find(ctx context.Context, condition *FindWhitelist) []Whitelist
-
-	// Match checks whether the given resource matches any whitelist rules in the given category.
-	//
-	// The resource format supports:
-	// - gRPC: "package.Service/Method" (exact match)
-	// - HTTP: "METHOD|/uri/path" or "METHOD|/uri/path|grpcResource"
-	Match(ctx context.Context, category int16, resource string) (bool, error)
 }
 
 type WhitelistUseCase struct {
@@ -73,6 +61,10 @@ func NewWhitelistUseCase(c *conf.Bootstrap, repo WhitelistRepo, tx Transaction, 
 }
 
 func (uc *WhitelistUseCase) Create(ctx context.Context, item *Whitelist) error {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "Create")
+	defer span.End()
+
 	return uc.tx.Tx(ctx, func(ctx context.Context) error {
 		return uc.cache.Flush(ctx, func(ctx context.Context) error {
 			return uc.repo.Create(ctx, item)
@@ -81,6 +73,10 @@ func (uc *WhitelistUseCase) Create(ctx context.Context, item *Whitelist) error {
 }
 
 func (uc *WhitelistUseCase) Find(ctx context.Context, condition *FindWhitelist) (rp []Whitelist, err error) {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "Find")
+	defer span.End()
+
 	action := strings.Join([]string{"find", utils.StructMd5(condition)}, "_")
 	str, err := uc.cache.Get(ctx, action, func(ctx context.Context) (string, error) {
 		return uc.find(ctx, action, condition)
@@ -107,6 +103,10 @@ func (uc *WhitelistUseCase) find(ctx context.Context, action string, condition *
 }
 
 func (uc *WhitelistUseCase) Match(ctx context.Context, category int16, resource string) (ok bool, err error) {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "Match")
+	defer span.End()
+
 	resource = strings.TrimSpace(resource)
 	if resource == "" {
 		return false, nil
@@ -141,6 +141,10 @@ func (uc *WhitelistUseCase) Match(ctx context.Context, category int16, resource 
 }
 
 func (uc *WhitelistUseCase) Update(ctx context.Context, item *UpdateWhitelist) error {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "Update")
+	defer span.End()
+
 	return uc.tx.Tx(ctx, func(ctx context.Context) error {
 		return uc.cache.Flush(ctx, func(ctx context.Context) error {
 			return uc.repo.Update(ctx, item)
@@ -148,11 +152,14 @@ func (uc *WhitelistUseCase) Update(ctx context.Context, item *UpdateWhitelist) e
 	})
 }
 
-func (uc *WhitelistUseCase) Delete(ctx context.Context, ids ...uint64) error {
+func (uc *WhitelistUseCase) Delete(ctx context.Context, ids ...int64) error {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "Delete")
+	defer span.End()
+
 	return uc.tx.Tx(ctx, func(ctx context.Context) error {
 		return uc.cache.Flush(ctx, func(ctx context.Context) error {
 			return uc.repo.Delete(ctx, ids...)
 		})
 	})
 }
-

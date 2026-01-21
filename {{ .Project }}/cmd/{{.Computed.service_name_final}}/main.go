@@ -1,10 +1,10 @@
 package main
 
 import (
-	{{ if .Computed.enable_trace_final }}
+	{{- if .Computed.enable_trace_final }}
 	"context"
 	"time"
-	{{ end }}
+	{{- end }}
 	"flag"
 	"fmt"
 	"os"
@@ -27,9 +27,9 @@ import (
 	_ "github.com/google/gnostic/openapiv3"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 
-	{{ if .Computed.enable_trace_final }}
+	{{- if .Computed.enable_trace_final }}
 	"{{ .Computed.module_name_final }}/internal/data"
-	{{ end }}
+	{{- end }}
 	"{{ .Computed.module_name_final }}/internal/conf"
 )
 
@@ -132,7 +132,7 @@ func main() {
 		}
 	}
 
-	{{ if .Computed.enable_trace_final }}
+	{{- if .Computed.enable_trace_final }}
 	// Initialize tracer before building servers; kratos tracing middleware captures the provider at setup time.
 	tp, err := data.NewTracer(&bc)
 	if err != nil {
@@ -145,7 +145,7 @@ func main() {
 			_ = tp.Shutdown(ctx)
 		}()
 	}
-	{{ end }}
+	{{- end }}
 
 	app, cleanup, err := wireApp(&bc)
 	if err != nil {

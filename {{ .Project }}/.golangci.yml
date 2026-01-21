@@ -15,10 +15,9 @@ issues:
 
 linters:
   default: fast
-  enable:
-    - wsl_v5
   disable:
     - wsl
+    - wsl_v5
     - depguard
     - nlreturn
     - funcorder
@@ -34,9 +33,3 @@ linters:
       statements: 100
     lll:
       line-length: 200
-    wsl_v5:
-      allow-first-in-block: true
-      allow-whole-block: false
-      branch-max-lines: 2
-      disable:
-        - return

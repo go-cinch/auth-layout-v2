@@ -15,4 +15,3 @@ var ProviderSet = wire.NewSet(NewGRPCServer, NewHTTPServer)
 //go:embed middleware/locales
 var locales embed.FS
 {{ end }}
-

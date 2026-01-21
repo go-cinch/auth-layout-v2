@@ -3,22 +3,34 @@ module {{.Computed.module_name_final}}
 go 1.25
 
 require (
+	{{- if .Computed.enable_task_final }}
 	github.com/bsm/redislock v0.9.4
+	{{- end }}
 	github.com/envoyproxy/protoc-gen-validate v1.1.0
+	{{- if .Computed.enable_captcha_final }}
 	{{.Computed.common_module_final}}/captcha v1.0.5
+	{{- end }}
 	{{.Computed.common_module_final}}/constant v1.0.5
 	{{.Computed.common_module_final}}/copierx v1.0.4
+	{{- if .Computed.enable_i18n_final }}
 	{{.Computed.common_module_final}}/i18n v1.0.7
+	{{- end }}
 	{{.Computed.common_module_final}}/id v1.0.6
+	{{- if .Computed.enable_idempotent_final }}
 	{{.Computed.common_module_final}}/idempotent v1.1.0
+	{{- end }}
 	{{.Computed.common_module_final}}/jwt v1.0.4
 	{{.Computed.common_module_final}}/log v1.2.0
+	{{- if .Computed.enable_i18n_final }}
 	{{.Computed.common_module_final}}/middleware/i18n v1.0.6
+	{{- end }}
 	{{.Computed.common_module_final}}/middleware/logging v1.0.1
 	{{.Computed.common_module_final}}/middleware/tenant/v2 v2.0.1
-	{{.Computed.common_module_final}}/middleware/trace v1.0.3
+	{{- if .Computed.enable_trace_final }}
+	{{.Computed.common_module_final}}/middleware/trace v1.0.4
+	{{- end }}
 	{{.Computed.common_module_final}}/mock v1.0.1
-	{{.Computed.common_module_final}}/page/v2 v2.0.1
+	{{.Computed.common_module_final}}/page/v2 v2.0.2
 	{{.Computed.common_module_final}}/plugins/gorm/log v1.0.5
 	{{.Computed.common_module_final}}/plugins/gorm/tenant/v2 v2.0.2
 	{{.Computed.common_module_final}}/plugins/k8s/pod v1.0.1
@@ -26,23 +38,30 @@ require (
 	{{.Computed.common_module_final}}/plugins/kratos/encoding/yml v1.0.2
 	{{.Computed.common_module_final}}/proto/params v1.0.1
 	{{.Computed.common_module_final}}/utils v1.0.5
+	{{- if .Computed.enable_task_final }}
 	{{.Computed.common_module_final}}/worker v1.2.1
+	{{- end }}
 	github.com/go-kratos/kratos/v2 v2.8.3
 	github.com/golang-jwt/jwt/v4 v4.5.1
 	github.com/golang-module/carbon/v2 v2.3.12
 	github.com/google/gnostic v0.7.0
 	github.com/google/wire v0.6.0
+	{{- if .Computed.enable_ws_final }}
 	github.com/gorilla/websocket v1.5.3
+	{{- end }}
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/pkg/errors v0.9.1
 	github.com/redis/go-redis/v9 v9.7.0
 	github.com/samber/lo v1.49.1
+	github.com/stretchr/testify v1.10.0
 	go.opentelemetry.io/otel v1.34.0
+	{{- if .Computed.enable_trace_final }}
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.34.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.34.0
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.34.0
 	go.opentelemetry.io/otel/sdk v1.34.0
 	go.opentelemetry.io/otel/trace v1.34.0
+	{{- end }}
 	golang.org/x/crypto v0.45.0
 	golang.org/x/text v0.31.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20250115164207-1a7da9e5054f
@@ -57,35 +76,56 @@ require (
 	github.com/BurntSushi/toml v1.3.2 // indirect
 	github.com/alicebob/gopher-json v0.0.0-20200520072559-a9ecdc9d1d3a // indirect
 	github.com/alicebob/miniredis/v2 v2.31.1 // indirect
+	{{- if .Computed.enable_trace_final }}
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
+	{{- end }}
+	{{- if .Computed.enable_task_final }}
 	github.com/cespare/xxhash v1.1.0 // indirect
+	{{- end }}
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
+	{{- if .Computed.enable_task_final }}
 	github.com/dolthub/flatbuffers/v23 v23.3.3-dh.2 // indirect
 	github.com/dolthub/go-icu-regex v0.0.0-20230524105445-af7e7991c97e // indirect
 	github.com/dolthub/go-mysql-server v0.17.0 // indirect
 	github.com/dolthub/jsonpath v0.0.2-0.20230525180605-8dc13778fd72 // indirect
 	github.com/dolthub/vitess v0.0.0-20230823204737-4a21a94e90c3 // indirect
+	{{- end }}
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	{{.Computed.common_module_final}}/migrate/v2 v2.0.1 // indirect
+	{{- if .Computed.enable_task_final }}
 	{{.Computed.common_module_final}}/queue/stream v1.0.0 // indirect
+	{{- end }}
 	github.com/go-gorp/gorp/v3 v3.1.0 // indirect
+	{{- if .Computed.enable_task_final }}
 	github.com/go-kit/kit v0.10.0 // indirect
+	{{- end }}
 	github.com/go-kratos/aegis v0.2.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-playground/form/v4 v4.2.1 // indirect
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
+	{{- if .Computed.enable_task_final }}
 	github.com/gocraft/dbr/v2 v2.7.2 // indirect
+	{{- end }}
+	{{- if .Computed.enable_captcha_final }}
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
+	{{- end }}
 	github.com/google/gnostic-models v0.6.9-0.20230804172637-c7be7c783f49 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	{{- if .Computed.enable_task_final }}
 	github.com/gorhill/cronexpr v0.0.0-20180427100037-88b0669f7d75 // indirect
+	{{- end }}
 	github.com/gorilla/mux v1.8.1 // indirect
+	{{- if .Computed.enable_trace_final }}
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.25.1 // indirect
+	{{- end }}
+	{{- if .Computed.enable_task_final }}
 	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/hibiken/asynq v0.25.1 // indirect
+	{{- end }}
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.6.0 // indirect
@@ -93,29 +133,45 @@ require (
 	github.com/jinzhu/copier v0.4.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	{{- if .Computed.enable_task_final }}
 	github.com/lestrrat-go/strftime v1.0.4 // indirect
+	{{- end }}
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/lufia/plan9stats v0.0.0-20230326075908-cb1d2100619a // indirect
+	{{- if .Computed.enable_task_final }}
 	github.com/mitchellh/hashstructure v1.1.0 // indirect
+	{{- end }}
+	{{- if .Computed.enable_captcha_final }}
 	github.com/mojocn/base64Captcha v1.3.5 // indirect
+	{{- end }}
+	{{- if .Computed.enable_i18n_final }}
 	github.com/nicksnyder/go-i18n/v2 v2.2.1 // indirect
+	{{- end }}
+	{{- if .Computed.enable_task_final }}
 	github.com/paulbellamy/ratecounter v0.2.0 // indirect
+	{{- end }}
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20221212215047-62379fc7944b // indirect
 	github.com/r3labs/diff/v3 v3.0.1 // indirect
+	{{- if .Computed.enable_task_final }}
 	github.com/robfig/cron/v3 v3.0.1 // indirect
+	{{- end }}
 	github.com/rubenv/sql-migrate v1.8.1 // indirect
 	github.com/shirou/gopsutil/v3 v3.23.6 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
+	{{- if .Computed.enable_task_final }}
 	github.com/shopspring/decimal v1.3.1 // indirect
+	{{- end }}
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/sony/sonyflake v1.1.0 // indirect
+	{{- if .Computed.enable_task_final }}
 	github.com/spf13/cast v1.7.0 // indirect
 	github.com/tetratelabs/wazero v1.1.0 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
+	{{- end }}
 	github.com/tklauser/go-sysconf v0.3.11 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/vmihailenco/msgpack/v5 v5.3.5 // indirect
@@ -124,17 +180,25 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	go.opentelemetry.io/auto/sdk v1.1.0 // indirect
 	go.opentelemetry.io/otel/metric v1.34.0 // indirect
+	{{- if .Computed.enable_trace_final }}
 	go.opentelemetry.io/proto/otlp v1.5.0 // indirect
+	{{- end }}
+	{{- if .Computed.enable_captcha_final }}
 	golang.org/x/image v0.0.0-20220302094943-723b81ca9867 // indirect
+	{{- end }}
 	golang.org/x/mod v0.29.0 // indirect
 	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
 	golang.org/x/sys v0.38.0 // indirect
 	golang.org/x/telemetry v0.0.0-20251008203120-078029d740a8 // indirect
+	{{- if .Computed.enable_task_final }}
 	golang.org/x/time v0.8.0 // indirect
+	{{- end }}
 	golang.org/x/tools v0.38.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250115164207-1a7da9e5054f // indirect
+	{{- if .Computed.enable_task_final }}
 	gopkg.in/src-d/go-errors.v1 v1.0.0 // indirect
+	{{- end }}
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorm.io/driver/mysql v1.6.0 // indirect
 	gorm.io/driver/postgres v1.6.0 // indirect

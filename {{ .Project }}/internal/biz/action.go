@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"go.opentelemetry.io/otel"
+
 	"{{ .Computed.common_module_final }}/page/v2"
 	"{{ .Computed.common_module_final }}/utils"
 
@@ -12,7 +14,7 @@ import (
 
 // Action defines a fine-grained permission rule for a resource/menu/button.
 type Action struct {
-	ID       uint64    `json:"id,string"`
+	ID       int64     `json:"id,string"`
 	Code     *string   `json:"code,omitempty"`
 	Name     *string   `json:"name,omitempty"`
 	Word     *string   `json:"word,omitempty"`
@@ -22,24 +24,17 @@ type Action struct {
 	Children []*Action `json:"children,omitempty"`
 }
 
+type FindAction struct {
+	Page     page.Page `json:"page"`
+	Code     *string   `json:"code,omitempty"`
+	Name     *string   `json:"name,omitempty"`
+	Word     *string   `json:"word,omitempty"`
+	Resource *string   `json:"resource,omitempty"`
+}
+
 type FindActionCache struct {
 	Page page.Page `json:"page"`
 	List []*Action `json:"list"`
-}
-
-type ActionRepo interface {
-	Create(ctx context.Context, item *Action) error
-	Update(ctx context.Context, item *Action) error
-	Delete(ctx context.Context, ids []uint64) error
-
-	Find(ctx context.Context, p *page.Page, filter *Action) (rp []*Action, total int64, err error)
-	GetByIDs(ctx context.Context, ids []uint64) (rp []*Action, err error)
-	GetTree(ctx context.Context) (rp []*Action, err error)
-
-	// FindByCode returns actions by comma-separated codes.
-	FindByCode(ctx context.Context, codes string) []Action
-	// CodeExists validates that all comma-separated codes exist.
-	CodeExists(ctx context.Context, codes string) error
 }
 
 type ActionUseCase struct {
@@ -61,6 +56,10 @@ func NewActionUseCase(c *conf.Bootstrap, repo ActionRepo, tx Transaction, cache 
 }
 
 func (uc *ActionUseCase) Create(ctx context.Context, item *Action) error {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "Create")
+	defer span.End()
+
 	return uc.tx.Tx(ctx, func(ctx context.Context) error {
 		return uc.cache.Flush(ctx, func(ctx context.Context) error {
 			return uc.repo.Create(ctx, item)
@@ -68,53 +67,48 @@ func (uc *ActionUseCase) Create(ctx context.Context, item *Action) error {
 	})
 }
 
-func (uc *ActionUseCase) Find(ctx context.Context, p *page.Page, filter *Action) (rp []*Action, total int64, err error) {
-	// Ensure stable cache keys by excluding Total (it is output, not input).
-	var hashPage page.Page
-	if p != nil {
-		hashPage = page.Page{Num: p.Num, Size: p.Size, Disable: p.Disable}
-	}
-	keyObj := struct {
-		Page   page.Page `json:"page"`
-		Filter *Action   `json:"filter"`
-	}{
-		Page:   hashPage,
-		Filter: filter,
-	}
+func (uc *ActionUseCase) Find(ctx context.Context, condition *FindAction) (rp []Action, err error) {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "Find")
+	defer span.End()
 
-	action := strings.Join([]string{"find", utils.StructMd5(keyObj)}, "_")
+	action := strings.Join([]string{"find", utils.StructMd5(condition)}, "_")
 	str, err := uc.cache.Get(ctx, action, func(ctx context.Context) (string, error) {
-		return uc.find(ctx, action, p, filter)
+		return uc.find(ctx, action, condition)
 	})
 	if err != nil {
-		return nil, 0, err
+		return nil, err
 	}
 	var cache FindActionCache
 	utils.JSON2Struct(&cache, str)
-	if p != nil {
-		*p = cache.Page
+	condition.Page = cache.Page
+	rp = make([]Action, 0, len(cache.List))
+	for _, item := range cache.List {
+		if item != nil {
+			rp = append(rp, *item)
+		}
 	}
-	return cache.List, cache.Page.Total, nil
+	return rp, nil
 }
 
-func (uc *ActionUseCase) find(ctx context.Context, action string, p *page.Page, filter *Action) (res string, err error) {
-	list, total, err := uc.repo.Find(ctx, p, filter)
-	if err != nil {
-		return "", err
-	}
+func (uc *ActionUseCase) find(ctx context.Context, action string, condition *FindAction) (res string, err error) {
+	list := uc.repo.Find(ctx, condition)
 	var cache FindActionCache
-	if p != nil {
-		cache.Page = *p
-	} else {
-		cache.Page.Total = total
+	cache.Page = condition.Page
+	cache.List = make([]*Action, 0, len(list))
+	for i := range list {
+		cache.List = append(cache.List, &list[i])
 	}
-	cache.List = list
 	res = utils.Struct2JSON(cache)
 	uc.cache.Set(ctx, action, res, len(list) == 0)
 	return res, nil
 }
 
 func (uc *ActionUseCase) Update(ctx context.Context, item *Action) error {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "Update")
+	defer span.End()
+
 	return uc.tx.Tx(ctx, func(ctx context.Context) error {
 		return uc.cache.Flush(ctx, func(ctx context.Context) (err error) {
 			return uc.repo.Update(ctx, item)
@@ -122,39 +116,14 @@ func (uc *ActionUseCase) Update(ctx context.Context, item *Action) error {
 	})
 }
 
-func (uc *ActionUseCase) Delete(ctx context.Context, ids ...uint64) error {
+func (uc *ActionUseCase) Delete(ctx context.Context, ids ...int64) error {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "Delete")
+	defer span.End()
+
 	return uc.tx.Tx(ctx, func(ctx context.Context) error {
 		return uc.cache.Flush(ctx, func(ctx context.Context) (err error) {
 			return uc.repo.Delete(ctx, ids)
 		})
 	})
 }
-
-func (uc *ActionUseCase) GetByIDs(ctx context.Context, ids []uint64) (rp []*Action, err error) {
-	// No cache: this is typically used internally in bulk flows and is cheap enough.
-	return uc.repo.GetByIDs(ctx, ids)
-}
-
-func (uc *ActionUseCase) GetTree(ctx context.Context) (rp []*Action, err error) {
-	// Tree is derived from actions; it is safe to cache and is flushed on any mutation.
-	action := "tree"
-	str, err := uc.cache.Get(ctx, action, func(ctx context.Context) (string, error) {
-		return uc.getTree(ctx, action)
-	})
-	if err != nil {
-		return nil, err
-	}
-	utils.JSON2Struct(&rp, str)
-	return rp, nil
-}
-
-func (uc *ActionUseCase) getTree(ctx context.Context, action string) (res string, err error) {
-	list, err := uc.repo.GetTree(ctx)
-	if err != nil {
-		return "", err
-	}
-	res = utils.Struct2JSON(list)
-	uc.cache.Set(ctx, action, res, len(list) == 0)
-	return res, nil
-}
-

@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"go.opentelemetry.io/otel"
+
 	"{{ .Computed.common_module_final }}/page/v2"
 	"{{ .Computed.common_module_final }}/utils"
 
@@ -11,7 +13,7 @@ import (
 )
 
 type Role struct {
-	ID      uint64   `json:"id,string"`
+	ID      int64    `json:"id,string"`
 	Name    string   `json:"name"`
 	Word    string   `json:"word"`
 	Action  string   `json:"action"`
@@ -31,17 +33,10 @@ type FindRoleCache struct {
 }
 
 type UpdateRole struct {
-	ID     uint64  `json:"id,string"`
+	ID     int64   `json:"id,string"`
 	Name   *string `json:"name,omitempty"`
 	Word   *string `json:"word,omitempty"`
 	Action *string `json:"action,omitempty"`
-}
-
-type RoleRepo interface {
-	Create(ctx context.Context, item *Role) error
-	Find(ctx context.Context, condition *FindRole) []Role
-	Update(ctx context.Context, item *UpdateRole) error
-	Delete(ctx context.Context, ids ...uint64) error
 }
 
 type RoleUseCase struct {
@@ -63,6 +58,10 @@ func NewRoleUseCase(c *conf.Bootstrap, repo RoleRepo, tx Transaction, cache Cach
 }
 
 func (uc *RoleUseCase) Create(ctx context.Context, item *Role) error {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "Create")
+	defer span.End()
+
 	return uc.tx.Tx(ctx, func(ctx context.Context) error {
 		return uc.cache.Flush(ctx, func(ctx context.Context) error {
 			return uc.repo.Create(ctx, item)
@@ -71,6 +70,10 @@ func (uc *RoleUseCase) Create(ctx context.Context, item *Role) error {
 }
 
 func (uc *RoleUseCase) Find(ctx context.Context, condition *FindRole) (rp []Role, err error) {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "Find")
+	defer span.End()
+
 	// use md5 string as cache replay json str, key is short
 	action := strings.Join([]string{"find", utils.StructMd5(condition)}, "_")
 	str, err := uc.cache.Get(ctx, action, func(ctx context.Context) (string, error) {
@@ -97,6 +100,10 @@ func (uc *RoleUseCase) find(ctx context.Context, action string, condition *FindR
 }
 
 func (uc *RoleUseCase) Update(ctx context.Context, item *UpdateRole) error {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "Update")
+	defer span.End()
+
 	return uc.tx.Tx(ctx, func(ctx context.Context) error {
 		return uc.cache.Flush(ctx, func(ctx context.Context) error {
 			return uc.repo.Update(ctx, item)
@@ -104,11 +111,14 @@ func (uc *RoleUseCase) Update(ctx context.Context, item *UpdateRole) error {
 	})
 }
 
-func (uc *RoleUseCase) Delete(ctx context.Context, ids ...uint64) error {
+func (uc *RoleUseCase) Delete(ctx context.Context, ids ...int64) error {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "Delete")
+	defer span.End()
+
 	return uc.tx.Tx(ctx, func(ctx context.Context) error {
 		return uc.cache.Flush(ctx, func(ctx context.Context) error {
 			return uc.repo.Delete(ctx, ids...)
 		})
 	})
 }
-

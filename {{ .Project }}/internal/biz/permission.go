@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"go.opentelemetry.io/otel"
+
 	"{{ .Computed.module_name_final }}/internal/conf"
 )
 
@@ -13,7 +15,7 @@ import (
 // When the optional Action module is enabled, the full Action use case/type lives
 // in `internal/biz/action.go` instead.
 type Action struct {
-	ID       uint64    `json:"id,string"`
+	ID       int64     `json:"id,string"`
 	Code     *string   `json:"code,omitempty"`
 	Name     *string   `json:"name,omitempty"`
 	Word     *string   `json:"word,omitempty"`
@@ -32,19 +34,10 @@ type Permission struct {
 }
 
 type CheckPermission struct {
-	UserID   uint64 `json:"userId,string"`
+	UserID   int64  `json:"userId,string"`
 	Resource string `json:"resource"`
 	Method   string `json:"method"`
 	URI      string `json:"uri"`
-}
-
-type PermissionRepo interface {
-	// GetUserPermissions returns all actions a user can access.
-	GetUserPermissions(ctx context.Context, userID uint64) ([]*Action, error)
-	// CheckPermission checks if a user is allowed to access the resource.
-	// If method is empty, resource is treated as a gRPC operation (exact match).
-	// If method is not empty, resource is treated as an HTTP URI and matched against action rules.
-	CheckPermission(ctx context.Context, userID uint64, resource, method string) (bool, error)
 }
 
 type PermissionUseCase struct {
@@ -62,6 +55,10 @@ func NewPermissionUseCase(c *conf.Bootstrap, repo PermissionRepo) *PermissionUse
 // Check validates a request against the caller's permissions.
 // When Method is set, URI is used as the resource to check.
 func (uc *PermissionUseCase) Check(ctx context.Context, req *CheckPermission) (ok bool, err error) {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "Check")
+	defer span.End()
+
 	if req == nil {
 		return false, ErrIllegalParameter(ctx, "permission")
 	}
@@ -78,23 +75,24 @@ func (uc *PermissionUseCase) Check(ctx context.Context, req *CheckPermission) (o
 	return uc.repo.CheckPermission(ctx, req.UserID, resource, method)
 }
 
-func (uc *PermissionUseCase) CheckPermission(ctx context.Context, userID uint64, resource, method string) (bool, error) {
+func (uc *PermissionUseCase) CheckPermission(ctx context.Context, userID int64, resource, method string) (bool, error) {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "CheckPermission")
+	defer span.End()
+
 	return uc.repo.CheckPermission(ctx, userID, resource, method)
 }
 
-func (uc *PermissionUseCase) GetUserPermissions(ctx context.Context, userID uint64) ([]*Action, error) {
-	if userID == 0 {
-		return nil, ErrIllegalParameter(ctx, "userID")
-	}
-	return uc.repo.GetUserPermissions(ctx, userID)
-}
+func (uc *PermissionUseCase) GetByUserID(ctx context.Context, userID int64) (*Permission, error) {
+	tr := otel.Tracer("biz")
+	ctx, span := tr.Start(ctx, "GetByUserID")
+	defer span.End()
 
-func (uc *PermissionUseCase) GetByUserID(ctx context.Context, userID uint64) (*Permission, error) {
 	if userID == 0 {
 		return nil, ErrIllegalParameter(ctx, "userID")
 	}
 
-	actions, err := uc.repo.GetUserPermissions(ctx, userID)
+	actions, err := uc.repo.FindUserPermissions(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -137,4 +135,3 @@ func (uc *PermissionUseCase) GetByUserID(ctx context.Context, userID uint64) (*P
 
 	return rp, nil
 }
-

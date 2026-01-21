@@ -18,14 +18,20 @@ import (
 	traceMiddleware "{{ .Computed.common_module_final }}/middleware/trace"
 	{{ end }}
 	"github.com/go-kratos/kratos/v2/transport/grpc"
+	{{- if .Computed.enable_idempotent_final }}
+	"github.com/redis/go-redis/v9"
+	{{- end }}
 
 	v1 "{{ .Computed.module_name_final }}/api/{{ .Computed.service_name_final }}"
 	"{{ .Computed.module_name_final }}/internal/conf"
+	{{- if .Computed.enable_idempotent_final }}
+	localMiddleware "{{ .Computed.module_name_final }}/internal/server/middleware"
+	{{- end }}
 	"{{ .Computed.module_name_final }}/internal/service"
 )
 
 // NewGRPCServer creates a gRPC server.
-func NewGRPCServer(c *conf.Bootstrap, svc *service.{{ .Computed.service_name_capitalized }}Service) *grpc.Server {
+func NewGRPCServer(c *conf.Bootstrap, svc *service.{{ .Computed.service_name_capitalized }}Service{{- if .Computed.enable_idempotent_final }}, rds redis.UniversalClient{{- end }}) *grpc.Server {
 	middlewares := []middleware.Middleware{
 		recovery.Recovery(),
 		tenantMiddleware.Tenant(), // Default required middleware for multi-tenancy
@@ -44,6 +50,9 @@ func NewGRPCServer(c *conf.Bootstrap, svc *service.{{ .Computed.service_name_cap
 	if c.Server.Validate {
 		middlewares = append(middlewares, validate.Validator())
 	}
+	{{- if .Computed.enable_idempotent_final }}
+	middlewares = append(middlewares, localMiddleware.Idempotent(rds))
+	{{- end }}
 
 	var opts = []grpc.ServerOption{
 		grpc.Middleware(middlewares...),
@@ -63,4 +72,3 @@ func NewGRPCServer(c *conf.Bootstrap, svc *service.{{ .Computed.service_name_cap
 
 	return srv
 }
-

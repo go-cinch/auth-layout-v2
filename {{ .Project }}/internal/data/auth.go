@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"{{ .Computed.common_module_final }}/log"
+	"go.opentelemetry.io/otel"
 	"gorm.io/gorm"
 
 	"{{ .Computed.module_name_final }}/internal/biz"
@@ -20,6 +21,10 @@ func NewAuthRepo(data *Data) biz.AuthRepo {
 }
 
 func (r authRepo) GetLoginUser(ctx context.Context, username string) (*biz.LoginUser, error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "GetLoginUser")
+	defer span.End()
+
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return nil, biz.ErrIllegalParameter(ctx, "username")
@@ -51,4 +56,3 @@ func (r authRepo) GetLoginUser(ctx context.Context, username string) (*biz.Login
 	}
 	return u, nil
 }
-

@@ -4,11 +4,12 @@ import (
 	"context"
 	"strings"
 
+	"go.opentelemetry.io/otel"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"{{ .Computed.common_module_final }}/copierx"
 	"{{ .Computed.common_module_final }}/log"
 	"{{ .Computed.common_module_final }}/utils"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 
 	"{{ .Computed.module_name_final }}/internal/biz"
 	"{{ .Computed.module_name_final }}/internal/data/model"
@@ -23,6 +24,10 @@ func NewUserGroupRepo(data *Data) biz.UserGroupRepo {
 }
 
 func (ro userGroupRepo) Create(ctx context.Context, item *biz.UserGroup) (err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Create")
+	defer span.End()
+
 	db := gorm.G[model.UserGroup](ro.data.DB(ctx))
 
 	// Check word uniqueness.
@@ -62,7 +67,7 @@ func (ro userGroupRepo) Create(ctx context.Context, item *biz.UserGroup) (err er
 
 	// Create initial user relations if provided.
 	if len(item.Users) > 0 {
-		userIDs := make([]uint64, 0, len(item.Users))
+		userIDs := make([]int64, 0, len(item.Users))
 		for _, u := range item.Users {
 			if u.Id == 0 {
 				continue
@@ -78,6 +83,10 @@ func (ro userGroupRepo) Create(ctx context.Context, item *biz.UserGroup) (err er
 }
 
 func (ro userGroupRepo) Find(ctx context.Context, condition *biz.FindUserGroup) (rp []biz.UserGroup) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Find")
+	defer span.End()
+
 	rp = make([]biz.UserGroup, 0)
 
 	q := gorm.G[model.UserGroup](ro.data.DB(ctx)).Where("1 = 1")
@@ -116,20 +125,24 @@ func (ro userGroupRepo) Find(ctx context.Context, condition *biz.FindUserGroup) 
 		return rp
 	}
 
-	rp = make([]biz.UserGroup, 0, len(list))
-	for _, m := range list {
-		var it biz.UserGroup
-		if err := copierx.Copy(&it, m); err != nil {
-			log.WithContext(ctx).WithError(err).Error("copy user_group failed")
-			return rp
+	copierx.Copy(&rp, list)
+
+	// Populate Actions and Users for each group
+	for i := range rp {
+		if rp[i].Action != "" {
+			rp[i].Actions = ro.getActionsByCode(ctx, rp[i].Action)
 		}
-		it.Id = m.ID
-		rp = append(rp, it)
+		rp[i].Users = ro.getUsersByGroupID(ctx, rp[i].Id)
 	}
+
 	return rp
 }
 
 func (ro userGroupRepo) Update(ctx context.Context, item *biz.UpdateUserGroup) (err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Update")
+	defer span.End()
+
 	db := gorm.G[model.UserGroup](ro.data.DB(ctx))
 
 	m, err := db.Where("id = ?", item.Id).First(ctx)
@@ -150,7 +163,7 @@ func (ro userGroupRepo) Update(ctx context.Context, item *biz.UpdateUserGroup) (
 	// Handle relation update by replacing all group users (users is a comma-separated list).
 	if a, ok := change["users"]; ok {
 		if v, ok := a.(string); ok {
-			if err := ro.replaceUsers(ctx, item.Id, utils.Str2Uint64Arr(v)); err != nil {
+			if err := ro.replaceUsers(ctx, item.Id, utils.Str2Int64Arr(v)); err != nil {
 				return err
 			}
 		}
@@ -198,7 +211,11 @@ func (ro userGroupRepo) Update(ctx context.Context, item *biz.UpdateUserGroup) (
 	return err
 }
 
-func (ro userGroupRepo) Delete(ctx context.Context, ids ...uint64) (err error) {
+func (ro userGroupRepo) Delete(ctx context.Context, ids ...int64) (err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Delete")
+	defer span.End()
+
 	if len(ids) == 0 {
 		return nil
 	}
@@ -220,8 +237,12 @@ func (ro userGroupRepo) Delete(ctx context.Context, ids ...uint64) (err error) {
 	return nil
 }
 
-func (ro userGroupRepo) AddUsers(ctx context.Context, groupID uint64, userIDs []uint64) (err error) {
-	userIDs = uniqueUint64(userIDs)
+func (ro userGroupRepo) AddUsers(ctx context.Context, groupID int64, userIDs []int64) (err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "AddUsers")
+	defer span.End()
+
+	userIDs = uniqueInt64(userIDs)
 	if groupID == 0 || len(userIDs) == 0 {
 		return nil
 	}
@@ -249,13 +270,11 @@ func (ro userGroupRepo) AddUsers(ctx context.Context, groupID uint64, userIDs []
 		return biz.ErrRecordNotFound(ctx)
 	}
 
-	gid := groupID
 	rels := make([]model.UserUserGroupRelation, 0, len(userIDs))
 	for _, uid := range userIDs {
-		uid := uid // avoid taking address of the range variable
 		rels = append(rels, model.UserUserGroupRelation{
-			UserID:      &uid,
-			UserGroupID: &gid,
+			UserID:      uid,
+			UserGroupID: groupID,
 		})
 	}
 
@@ -267,8 +286,12 @@ func (ro userGroupRepo) AddUsers(ctx context.Context, groupID uint64, userIDs []
 	return nil
 }
 
-func (ro userGroupRepo) RemoveUsers(ctx context.Context, groupID uint64, userIDs []uint64) (err error) {
-	userIDs = uniqueUint64(userIDs)
+func (ro userGroupRepo) RemoveUsers(ctx context.Context, groupID int64, userIDs []int64) (err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "RemoveUsers")
+	defer span.End()
+
+	userIDs = uniqueInt64(userIDs)
 	if groupID == 0 || len(userIDs) == 0 {
 		return nil
 	}
@@ -282,57 +305,7 @@ func (ro userGroupRepo) RemoveUsers(ctx context.Context, groupID uint64, userIDs
 	return err
 }
 
-func (ro userGroupRepo) GetUsers(ctx context.Context, groupID uint64) (rp []biz.User, err error) {
-	rp = make([]biz.User, 0)
-	if groupID == 0 {
-		return rp, nil
-	}
-
-	rels, err := gorm.G[model.UserUserGroupRelation](ro.data.DB(ctx)).
-		Where("user_group_id = ?", groupID).
-		Find(ctx)
-	if err != nil {
-		log.WithContext(ctx).WithError(err).Error("get user_group users relation failed")
-		return nil, err
-	}
-	if len(rels) == 0 {
-		return rp, nil
-	}
-
-	userIDs := make([]uint64, 0, len(rels))
-	for _, rel := range rels {
-		if rel.UserID != nil {
-			userIDs = append(userIDs, *rel.UserID)
-		}
-	}
-	userIDs = uniqueUint64(userIDs)
-	if len(userIDs) == 0 {
-		return rp, nil
-	}
-
-	users, err := gorm.G[model.User](ro.data.DB(ctx)).
-		Where("id IN ?", userIDs).
-		Order("id DESC").
-		Find(ctx)
-	if err != nil {
-		log.WithContext(ctx).WithError(err).Error("get users failed")
-		return nil, err
-	}
-
-	rp = make([]biz.User, 0, len(users))
-	for _, m := range users {
-		var it biz.User
-		if err := copierx.Copy(&it, m); err != nil {
-			log.WithContext(ctx).WithError(err).Error("copy user failed")
-			return nil, err
-		}
-		it.Id = m.ID
-		rp = append(rp, it)
-	}
-	return rp, nil
-}
-
-func (ro userGroupRepo) replaceUsers(ctx context.Context, groupID uint64, userIDs []uint64) error {
+func (ro userGroupRepo) replaceUsers(ctx context.Context, groupID int64, userIDs []int64) error {
 	if groupID == 0 {
 		return nil
 	}
@@ -388,12 +361,12 @@ func splitComma(s string) []string {
 	return out
 }
 
-func uniqueUint64(ids []uint64) []uint64 {
+func uniqueInt64(ids []int64) []int64 {
 	if len(ids) == 0 {
 		return nil
 	}
-	out := make([]uint64, 0, len(ids))
-	seen := make(map[uint64]struct{}, len(ids))
+	out := make([]int64, 0, len(ids))
+	seen := make(map[int64]struct{}, len(ids))
 	for _, id := range ids {
 		if id == 0 {
 			continue
@@ -403,6 +376,79 @@ func uniqueUint64(ids []uint64) []uint64 {
 		}
 		seen[id] = struct{}{}
 		out = append(out, id)
+	}
+	return out
+}
+
+func (ro userGroupRepo) getActionsByCode(ctx context.Context, code string) []biz.Action {
+	rp := make([]biz.Action, 0)
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return rp
+	}
+	codes := ro.splitCodes(code)
+	if len(codes) == 0 {
+		return rp
+	}
+
+	list, err := gorm.G[model.Action](ro.data.DB(ctx)).
+		Where("code IN ?", codes).
+		Find(ctx)
+	if err != nil {
+		log.WithContext(ctx).WithError(err).Error("find actions by code failed")
+		return rp
+	}
+	copierx.Copy(&rp, list)
+	return rp
+}
+
+func (ro userGroupRepo) getUsersByGroupID(ctx context.Context, groupID int64) []biz.User {
+	rp := make([]biz.User, 0)
+	if groupID == 0 {
+		return rp
+	}
+
+	rels, err := gorm.G[model.UserUserGroupRelation](ro.data.DB(ctx)).
+		Where("user_group_id = ?", groupID).
+		Find(ctx)
+	if err != nil {
+		log.WithContext(ctx).WithError(err).Error("find user_user_group_relation failed")
+		return rp
+	}
+	if len(rels) == 0 {
+		return rp
+	}
+
+	userIDs := make([]int64, 0, len(rels))
+	for _, rel := range rels {
+		if rel.UserID != 0 {
+			userIDs = append(userIDs, rel.UserID)
+		}
+	}
+	if len(userIDs) == 0 {
+		return rp
+	}
+
+	users, err := gorm.G[model.User](ro.data.DB(ctx)).
+		Where("id IN ?", userIDs).
+		Find(ctx)
+	if err != nil {
+		log.WithContext(ctx).WithError(err).Error("find users by group failed")
+		return rp
+	}
+	copierx.Copy(&rp, users)
+	return rp
+}
+
+func (userGroupRepo) splitCodes(code string) []string {
+	arr := strings.Split(code, ",")
+	out := make([]string, 0, len(arr))
+	for _, v := range arr {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		out = append(out, v)
 	}
 	return out
 }

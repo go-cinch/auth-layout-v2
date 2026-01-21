@@ -1,3 +1,4 @@
+{{- if .Computed.enable_idempotent_final }}
 package middleware
 
 import (
@@ -34,3 +35,4 @@ func Idempotent(rds redis.UniversalClient) middleware.Middleware {
 		}
 	}
 }
+{{- end }}

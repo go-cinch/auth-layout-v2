@@ -11,6 +11,7 @@ import (
 	"{{ .Computed.common_module_final }}/mock"
 	gormTenant "{{ .Computed.common_module_final }}/plugins/gorm/tenant/v2"
 	"github.com/go-kratos/kratos/v2/transport"
+	"github.com/redis/go-redis/v9"
 
 	"{{ .Computed.module_name_final }}/internal/biz"
 	"{{ .Computed.module_name_final }}/internal/conf"
@@ -53,6 +54,9 @@ func {{ .Computed.service_name_capitalized }}Service() *service.{{ .Computed.ser
 		{{- end }}
 		{{- if .Computed.enable_hotspot_final }}
 		HotspotRepo(),
+		{{- end }}
+		{{- if .Computed.enable_health_check_final }}
+		HealthRepo(),
 		{{- end }}
 	)
 }
@@ -110,6 +114,13 @@ func HotspotRepo() biz.HotspotRepo {
 }
 {{- end }}
 
+{{- if .Computed.enable_health_check_final }}
+func HealthRepo() biz.HealthRepo {
+	_, d, _ := Data()
+	return data.NewHealthRepo(d, onceRedis)
+}
+{{- end }}
+
 type headerCarrier http.Header
 
 func (hc headerCarrier) Get(key string) string { return http.Header(hc).Get(key) }
@@ -164,6 +175,7 @@ var (
 	onceC     *conf.Bootstrap
 	onceData  *data.Data
 	onceCache biz.Cache
+	onceRedis redis.UniversalClient
 	once      sync.Once
 )
 
@@ -176,6 +188,7 @@ func Data() (c *conf.Bootstrap, dataData *data.Data, cache biz.Cache) {
 		if err != nil {
 			panic(err)
 		}
+		onceRedis = universalClient
 		onceCache = data.NewCache(onceC, universalClient)
 	})
 	return onceC, onceData, onceCache
@@ -225,4 +238,3 @@ func DBAndRedis() *conf.Bootstrap {
 		},
 	}
 }
-

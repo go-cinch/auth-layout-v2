@@ -1,30 +1,52 @@
 package service
 
 import (
-	"context"
+	"encoding/json"
 	"net/http"
 
+	"go.opentelemetry.io/otel"
+
 	"{{ .Computed.common_module_final }}/log"
-	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
+type HealthStatus struct {
+	Status string            `json:"status"`
+	Checks map[string]string `json:"checks,omitempty"`
+}
+
 // HealthCheck handles the HTTP health endpoint.
-func (*{{ .Computed.service_name_capitalized }}Service) HealthCheck(writer http.ResponseWriter, _ *http.Request) {
-	log.Debug("healthcheck")
+func (s *{{ .Computed.service_name_capitalized }}Service) HealthCheck(writer http.ResponseWriter, req *http.Request) {
+	tr := otel.Tracer("service")
+	ctx, span := tr.Start(req.Context(), "HealthCheck")
+	defer span.End()
+
+	status := HealthStatus{
+		Status: "healthy",
+		Checks: make(map[string]string),
+	}
+	httpStatus := http.StatusOK
+
+	// Check DB
+	if err := s.health.PingDB(ctx); err != nil {
+		log.WithContext(ctx).WithError(err).Error("health check: db ping failed")
+		status.Status = "unhealthy"
+		status.Checks["db"] = err.Error()
+		httpStatus = http.StatusServiceUnavailable
+	} else {
+		status.Checks["db"] = "ok"
+	}
+
+	// Check Redis
+	if err := s.health.PingRedis(ctx); err != nil {
+		log.WithContext(ctx).WithError(err).Error("health check: redis ping failed")
+		status.Status = "unhealthy"
+		status.Checks["redis"] = err.Error()
+		httpStatus = http.StatusServiceUnavailable
+	} else {
+		status.Checks["redis"] = "ok"
+	}
+
 	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(http.StatusOK)
-	_, _ = writer.Write([]byte("{}"))
+	writer.WriteHeader(httpStatus)
+	json.NewEncoder(writer).Encode(status)
 }
-
-// Check implements the standard gRPC health check.
-func (*{{ .Computed.service_name_capitalized }}Service) Check(context.Context, *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
-	return &grpc_health_v1.HealthCheckResponse{
-		Status: grpc_health_v1.HealthCheckResponse_SERVING,
-	}, nil
-}
-
-// Watch streams health updates for the gRPC health endpoint.
-func (*{{ .Computed.service_name_capitalized }}Service) Watch(*grpc_health_v1.HealthCheckRequest, grpc_health_v1.Health_WatchServer) error {
-	return nil
-}
-

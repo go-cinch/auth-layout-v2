@@ -7,6 +7,7 @@ import (
 	"time"
 
 	gocache "github.com/patrickmn/go-cache"
+	"go.opentelemetry.io/otel"
 	"gorm.io/gorm"
 	"{{ .Computed.common_module_final }}/copierx"
 	"{{ .Computed.common_module_final }}/log"
@@ -54,6 +55,10 @@ func NewHotspotRepo(data *Data) biz.HotspotRepo {
 }
 
 func (ro *hotspotRepo) Refresh(ctx context.Context) error {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Refresh")
+	defer span.End()
+
 	// Clear all in-memory caches (best-effort warmup happens below).
 	ro.userByCode.Flush()
 	ro.userByUsername.Flush()
@@ -68,10 +73,7 @@ func (ro *hotspotRepo) Refresh(ctx context.Context) error {
 		return err
 	}
 	for _, m := range list {
-		if m.Code == nil {
-			continue
-		}
-		code := strings.TrimSpace(*m.Code)
+		code := strings.TrimSpace(m.Code)
 		if code == "" {
 			continue
 		}
@@ -117,7 +119,7 @@ func (ro *hotspotRepo) getUserByField(
 		return item
 	}
 
-	_ = copierx.Copy(item, m)
+	copierx.Copy(item, m)
 	item.Id = m.ID
 	item.Locked = m.Locked != nil && *m.Locked != 0
 
@@ -130,6 +132,10 @@ func (ro *hotspotRepo) getUserByField(
 }
 
 func (ro *hotspotRepo) GetUserByCode(ctx context.Context, code string) *biz.User {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "GetUserByCode")
+	defer span.End()
+
 	return ro.getUserByField(
 		ctx, "code", code,
 		ro.userByCode, hotspotUserByCodeTTL,
@@ -139,6 +145,10 @@ func (ro *hotspotRepo) GetUserByCode(ctx context.Context, code string) *biz.User
 }
 
 func (ro *hotspotRepo) GetUserByUsername(ctx context.Context, username string) *biz.User {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "GetUserByUsername")
+	defer span.End()
+
 	return ro.getUserByField(
 		ctx, "username", username,
 		ro.userByUsername, hotspotUserByUsernameTTL,
@@ -148,6 +158,10 @@ func (ro *hotspotRepo) GetUserByUsername(ctx context.Context, username string) *
 }
 
 func (ro *hotspotRepo) GetActionByCode(ctx context.Context, code string) *biz.Action {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "GetActionByCode")
+	defer span.End()
+
 	item := &biz.Action{}
 	code = strings.TrimSpace(code)
 	if code == "" {
@@ -167,16 +181,20 @@ func (ro *hotspotRepo) GetActionByCode(ctx context.Context, code string) *biz.Ac
 		return item
 	}
 
-	_ = copierx.Copy(item, m)
+	copierx.Copy(item, m)
 	ro.actionByCode.Set(code, *item, hotspotActionTTL)
 	return item
 }
 
-func (ro *hotspotRepo) GetUserPermissions(ctx context.Context, userID uint64) ([]*biz.Action, error) {
+func (ro *hotspotRepo) FindUserPermissions(ctx context.Context, userID int64) ([]*biz.Action, error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "FindUserPermissions")
+	defer span.End()
+
 	if userID == 0 {
 		return nil, biz.ErrIllegalParameter(ctx, "userID")
 	}
-	key := strconv.FormatUint(userID, 10)
+	key := strconv.FormatInt(userID, 10)
 
 	if v, ok := ro.userPermissions.Get(key); ok {
 		if list, ok := v.([]biz.Action); ok {
@@ -214,10 +232,7 @@ func (ro *hotspotRepo) GetUserPermissions(ctx context.Context, userID uint64) ([
 			return nil, qErr
 		}
 		for _, m := range list {
-			if m.Code == nil {
-				continue
-			}
-			c := strings.TrimSpace(*m.Code)
+			c := strings.TrimSpace(m.Code)
 			if c == "" {
 				continue
 			}
@@ -248,7 +263,11 @@ func (ro *hotspotRepo) GetUserPermissions(ctx context.Context, userID uint64) ([
 	return res, nil
 }
 
-func (ro *hotspotRepo) CheckPermission(ctx context.Context, userID uint64, resource, method string) (bool, error) {
+func (ro *hotspotRepo) CheckPermission(ctx context.Context, userID int64, resource, method string) (bool, error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "CheckPermission")
+	defer span.End()
+
 	resource = strings.TrimSpace(resource)
 	method = strings.TrimSpace(method)
 
@@ -259,7 +278,7 @@ func (ro *hotspotRepo) CheckPermission(ctx context.Context, userID uint64, resou
 		return false, nil
 	}
 
-	actions, err := ro.GetUserPermissions(ctx, userID)
+	actions, err := ro.FindUserPermissions(ctx, userID)
 	if err != nil {
 		return false, err
 	}
@@ -287,11 +306,11 @@ func (ro *hotspotRepo) CheckPermission(ctx context.Context, userID uint64, resou
 	return false, nil
 }
 
-func (ro *hotspotRepo) getUserActionCodes(ctx context.Context, userID uint64) ([]string, error) {
+func (ro *hotspotRepo) getUserActionCodes(ctx context.Context, userID int64) ([]string, error) {
 	if userID == 0 {
 		return nil, biz.ErrIllegalParameter(ctx, "userID")
 	}
-	key := strconv.FormatUint(userID, 10)
+	key := strconv.FormatInt(userID, 10)
 
 	if v, ok := ro.userActionCodes.Get(key); ok {
 		if codes, ok := v.([]string); ok {

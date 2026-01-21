@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 
+	"go.opentelemetry.io/otel"
+
 	"{{ .Computed.common_module_final }}/copierx"
 	"{{ .Computed.common_module_final }}/jwt"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -12,9 +14,9 @@ import (
 )
 
 func (s *{{ .Computed.service_name_capitalized }}Service) Permission(ctx context.Context, req *v1.PermissionRequest) (*emptypb.Empty, error) {
-	if s.user == nil || s.permission == nil {
-		return nil, biz.ErrInternal(ctx, "permission service not configured")
-	}
+	tr := otel.Tracer("service")
+	ctx, span := tr.Start(ctx, "Permission")
+	defer span.End()
 
 	u := jwt.FromServerContext(ctx)
 	info := s.user.Info(ctx, u.Attrs["code"])
@@ -25,17 +27,7 @@ func (s *{{ .Computed.service_name_capitalized }}Service) Permission(ctx context
 	check := &biz.CheckPermission{
 		UserID: info.Id,
 	}
-	if req != nil {
-		if req.Resource != nil {
-			check.Resource = *req.Resource
-		}
-		if req.Method != nil {
-			check.Method = *req.Method
-		}
-		if req.Uri != nil {
-			check.URI = *req.Uri
-		}
-	}
+	copierx.Copy(check, req)
 
 	ok, err := s.permission.Check(ctx, check)
 	if err != nil || !ok {
@@ -54,9 +46,9 @@ func (s *{{ .Computed.service_name_capitalized }}Service) Permission(ctx context
 }
 
 func (s *{{ .Computed.service_name_capitalized }}Service) Info(ctx context.Context, _ *emptypb.Empty) (*v1.InfoReply, error) {
-	if s.user == nil || s.permission == nil {
-		return nil, biz.ErrInternal(ctx, "info service not configured")
-	}
+	tr := otel.Tracer("service")
+	ctx, span := tr.Start(ctx, "Info")
+	defer span.End()
 
 	u := jwt.FromServerContext(ctx)
 	info := s.user.Info(ctx, u.Attrs["code"])
@@ -69,8 +61,7 @@ func (s *{{ .Computed.service_name_capitalized }}Service) Info(ctx context.Conte
 	}
 
 	p, _ := s.permission.GetByUserID(ctx, info.Id)
-	_ = copierx.Copy(&rp.Permission, p)
-	_ = copierx.Copy(&rp, info)
+	copierx.Copy(&rp.Permission, p)
+	copierx.Copy(&rp, info)
 	return rp, nil
 }
-

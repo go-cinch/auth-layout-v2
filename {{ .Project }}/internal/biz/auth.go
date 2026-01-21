@@ -4,9 +4,9 @@ import (
 	"context"
 	"strings"
 
+	"golang.org/x/crypto/bcrypt"
 	"{{ .Computed.common_module_final }}/jwt"
 	"{{ .Computed.module_name_final }}/internal/conf"
-	"golang.org/x/crypto/bcrypt"
 )
 
 // LoginRequest is the core authentication request payload.
@@ -24,18 +24,13 @@ type LoginReply struct {
 
 // LoginUser is the minimum user info required to authenticate and issue a JWT.
 type LoginUser struct {
-	ID       uint64 `json:"id,string"`
+	ID       int64  `json:"id,string"`
 	Username string `json:"username"`
 	Code     string `json:"code"`
 	Platform string `json:"platform"`
 	Locked   bool   `json:"locked"`
 
 	PasswordHash string `json:"-"`
-}
-
-type AuthRepo interface {
-	// GetLoginUser returns a user by username with password hash and JWT attrs.
-	GetLoginUser(ctx context.Context, username string) (*LoginUser, error)
 }
 
 type AuthUseCase struct {

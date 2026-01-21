@@ -5,10 +5,11 @@ import (
 	"regexp"
 	"strings"
 
+	"go.opentelemetry.io/otel"
+	"gorm.io/gorm"
 	"{{ .Computed.common_module_final }}/copierx"
 	"{{ .Computed.common_module_final }}/log"
 	"{{ .Computed.common_module_final }}/utils"
-	"gorm.io/gorm"
 
 	"{{ .Computed.module_name_final }}/internal/biz"
 	"{{ .Computed.module_name_final }}/internal/data/model"
@@ -25,9 +26,10 @@ func NewWhitelistRepo(data *Data) biz.WhitelistRepo {
 }
 
 func (ro whitelistRepo) Create(ctx context.Context, item *biz.Whitelist) (err error) {
-	if item == nil {
-		return biz.ErrIllegalParameter(ctx, "item")
-	}
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Create")
+	defer span.End()
+
 	db := gorm.G[model.Whitelist](ro.data.DB(ctx))
 
 	if item.ID == 0 {
@@ -35,17 +37,11 @@ func (ro whitelistRepo) Create(ctx context.Context, item *biz.Whitelist) (err er
 	}
 
 	var m model.Whitelist
-	_ = copierx.Copy(&m, item)
+	copierx.Copy(&m, item)
 
-	// Defensive: ensure required pointers are set after copy.
-	if m.Category == nil {
-		v := item.Category
-		m.Category = &v
-	}
-	if m.Resource == nil {
-		v := item.Resource
-		m.Resource = &v
-	}
+	// Set values directly since model fields are non-pointer.
+	m.Category = item.Category
+	m.Resource = item.Resource
 
 	err = db.Create(ctx, &m)
 	if err != nil {
@@ -55,9 +51,10 @@ func (ro whitelistRepo) Create(ctx context.Context, item *biz.Whitelist) (err er
 }
 
 func (ro whitelistRepo) Update(ctx context.Context, item *biz.UpdateWhitelist) (err error) {
-	if item == nil {
-		return biz.ErrIllegalParameter(ctx, "item")
-	}
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Update")
+	defer span.End()
+
 	db := gorm.G[model.Whitelist](ro.data.DB(ctx))
 
 	m, err := db.Where("id = ?", item.ID).First(ctx)
@@ -87,7 +84,11 @@ func (ro whitelistRepo) Update(ctx context.Context, item *biz.UpdateWhitelist) (
 	return err
 }
 
-func (ro whitelistRepo) Delete(ctx context.Context, ids ...uint64) (err error) {
+func (ro whitelistRepo) Delete(ctx context.Context, ids ...int64) (err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Delete")
+	defer span.End()
+
 	if len(ids) == 0 {
 		return nil
 	}
@@ -101,11 +102,11 @@ func (ro whitelistRepo) Delete(ctx context.Context, ids ...uint64) (err error) {
 }
 
 func (ro whitelistRepo) Find(ctx context.Context, condition *biz.FindWhitelist) (rp []biz.Whitelist) {
-	rp = make([]biz.Whitelist, 0)
-	if condition == nil {
-		return rp
-	}
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Find")
+	defer span.End()
 
+	rp = make([]biz.Whitelist, 0)
 	q := gorm.G[model.Whitelist](ro.data.DB(ctx)).Where("1 = 1")
 
 	// Apply filters.
@@ -142,11 +143,15 @@ func (ro whitelistRepo) Find(ctx context.Context, condition *biz.FindWhitelist) 
 		return rp
 	}
 
-	_ = copierx.Copy(&rp, list)
+	copierx.Copy(&rp, list)
 	return rp
 }
 
 func (ro whitelistRepo) Match(ctx context.Context, category int16, resource string) (ok bool, err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Match")
+	defer span.End()
+
 	resource = strings.TrimSpace(resource)
 	if resource == "" {
 		return false, nil
@@ -161,10 +166,10 @@ func (ro whitelistRepo) Match(ctx context.Context, category int16, resource stri
 
 	req := parseMatchResource(resource)
 	for _, item := range list {
-		if item.Resource == nil {
+		if item.Resource == "" {
 			continue
 		}
-		if matchWhitelistResource(*item.Resource, req) {
+		if matchWhitelistResource(item.Resource, req) {
 			return true, nil
 		}
 	}
@@ -265,4 +270,3 @@ func matchGlob(pattern, s string) bool {
 	re = "^" + re + "$"
 	return regexp.MustCompile(re).MatchString(s)
 }
-

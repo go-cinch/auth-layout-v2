@@ -54,4 +54,3 @@ func NewClient[T any](name, endpoint string, health bool, timeout time.Duration,
 		Info(strings.Join([]string{"initialize", name, "client success"}, " "))
 	return
 }
-

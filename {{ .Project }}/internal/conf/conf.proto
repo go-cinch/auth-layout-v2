@@ -47,8 +47,9 @@ message Server {
     google.protobuf.Duration timeout = 3;
   }
   message Jwt {
-    string key = 1;
-    string expires = 2;
+    bool enable = 1;
+    string key = 2;
+    string expires = 3;
   }
   string machineId = 1;
   HTTP http = 2;

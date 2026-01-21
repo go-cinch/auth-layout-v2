@@ -11,6 +11,7 @@ import (
 	"{{ .Computed.common_module_final }}/log"
 	"{{ .Computed.common_module_final }}/utils"
 	"github.com/golang-module/carbon/v2"
+	"go.opentelemetry.io/otel"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -30,11 +31,15 @@ func NewUserRepo(data *Data) biz.UserRepo {
 }
 
 func (ro userRepo) GetByUsername(ctx context.Context, username string) (item *biz.User, err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "GetByUsername")
+	defer span.End()
+
 	item = &biz.User{}
 
 	db := gorm.G[model.User](ro.data.DB(ctx), clause.Locking{Strength: "UPDATE"})
 	m, qErr := db.Where("username = ?", username).First(ctx)
-	if qErr != nil || m.ID == constant.UI0 {
+	if qErr != nil || m.ID == 0 {
 		// Keep old behavior: treat any error as "record not found".
 		err = biz.ErrRecordNotFound(ctx)
 		log.WithContext(ctx).WithError(err).Error("invalid username: %s", username)
@@ -51,6 +56,10 @@ func (ro userRepo) GetByUsername(ctx context.Context, username string) (item *bi
 }
 
 func (ro userRepo) Find(ctx context.Context, condition *biz.FindUser) (rp []biz.User) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Find")
+	defer span.End()
+
 	rp = make([]biz.User, 0)
 
 	q := gorm.G[model.User](ro.data.DB(ctx)).Where("1 = 1")
@@ -108,18 +117,19 @@ func (ro userRepo) Find(ctx context.Context, condition *biz.FindUser) (rp []biz.
 	}
 
 	// Batch load roles since generated model doesn't include association fields.
-	roleMap := make(map[uint64]model.Role)
-	roleIDs := make([]uint64, 0, len(list))
-	seenRole := make(map[uint64]struct{}, len(list))
+	roleMap := make(map[int64]model.Role)
+	roleIDs := make([]int64, 0, len(list))
+	seenRole := make(map[int64]struct{}, len(list))
 	for _, u := range list {
 		if u.RoleID == nil || *u.RoleID == 0 {
 			continue
 		}
-		if _, ok := seenRole[*u.RoleID]; ok {
+		rid := *u.RoleID
+		if _, ok := seenRole[rid]; ok {
 			continue
 		}
-		seenRole[*u.RoleID] = struct{}{}
-		roleIDs = append(roleIDs, *u.RoleID)
+		seenRole[rid] = struct{}{}
+		roleIDs = append(roleIDs, rid)
 	}
 	if len(roleIDs) > 0 {
 		rq := gorm.G[model.Role](ro.data.DB(ctx)).Where("id IN ?", roleIDs)
@@ -133,9 +143,9 @@ func (ro userRepo) Find(ctx context.Context, condition *biz.FindUser) (rp []biz.
 		}
 	}
 
-	{{ if .Computed.enable_user_lock_final }}
+	{{- if .Computed.enable_user_lock_final }}
 	timestamp := carbon.Now().Timestamp()
-	{{ end }}
+	{{- end }}
 	rp = make([]biz.User, 0, len(list))
 	for _, m := range list {
 		var u biz.User
@@ -149,7 +159,7 @@ func (ro userRepo) Find(ctx context.Context, condition *biz.FindUser) (rp []biz.
 		// Fill role info if requested/available.
 		if m.RoleID != nil {
 			if r, ok := roleMap[*m.RoleID]; ok {
-				_ = copierx.Copy(&u.Role, r)
+				copierx.Copy(&u.Role, r)
 				u.Role.ID = r.ID
 			}
 		}
@@ -157,7 +167,7 @@ func (ro userRepo) Find(ctx context.Context, condition *biz.FindUser) (rp []biz.
 		// Populate actions (keep old behavior).
 		u.Actions, _ = ro.getActionsByCode(ctx, u.Action)
 
-		{{ if .Computed.enable_user_lock_final }}
+		{{- if .Computed.enable_user_lock_final }}
 		// Lock status/message (keep old behavior).
 		if !u.Locked || (u.LockExpire > constant.I0 && timestamp > u.LockExpire) {
 			u.Locked = false
@@ -188,7 +198,7 @@ func (ro userRepo) Find(ctx context.Context, condition *biz.FindUser) (rp []biz.
 			ms = append(ms, carbon.CreateFromTimestamp(u.LockExpire).ToDateTimeString())
 		}
 		u.LockMsg = strings.Join(ms, "")
-		{{ end }}
+		{{- end }}
 
 		rp = append(rp, u)
 	}
@@ -197,6 +207,10 @@ func (ro userRepo) Find(ctx context.Context, condition *biz.FindUser) (rp []biz.
 }
 
 func (ro userRepo) Create(ctx context.Context, item *biz.User) (err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Create")
+	defer span.End()
+
 	db := gorm.G[model.User](ro.data.DB(ctx))
 
 	count, err := db.Where("username = ?", item.Username).Count(ctx, "*")
@@ -215,7 +229,7 @@ func (ro userRepo) Create(ctx context.Context, item *biz.User) (err error) {
 		return
 	}
 	m.ID = ro.data.ID(ctx)
-	m.Code = id.NewCode(m.ID)
+	m.Code = id.NewCode(uint64(m.ID))
 	m.Locked = ptrInt16(boolToInt16(item.Locked))
 
 	if m.Action != nil && *m.Action != "" {
@@ -232,10 +246,14 @@ func (ro userRepo) Create(ctx context.Context, item *biz.User) (err error) {
 }
 
 func (ro userRepo) Update(ctx context.Context, item *biz.UpdateUser) (err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Update")
+	defer span.End()
+
 	db := gorm.G[model.User](ro.data.DB(ctx))
 
 	m, qErr := db.Where("id = ?", item.Id).First(ctx)
-	if qErr == gorm.ErrRecordNotFound || m.ID == constant.UI0 {
+	if qErr == gorm.ErrRecordNotFound || m.ID == 0 {
 		err = biz.ErrRecordNotFound(ctx)
 		return
 	}
@@ -254,8 +272,8 @@ func (ro userRepo) Update(ctx context.Context, item *biz.UpdateUser) (err error)
 
 	// check lock or unlock
 	if locked, ok := change["locked"]; ok {
-		if v, ok := toBool(locked); ok {
-			{{ if .Computed.enable_user_lock_final }}
+		if v, ok := toInt16(locked); ok {
+			{{- if .Computed.enable_user_lock_final }}
 			var lockExpire int64
 			if expire, ok := change["lock_expire"]; ok {
 				if v2, ok := toInt64(expire); ok {
@@ -264,13 +282,14 @@ func (ro userRepo) Update(ctx context.Context, item *biz.UpdateUser) (err error)
 			}
 
 			oldLocked := m.Locked != nil && *m.Locked != 0
-			if oldLocked && !v {
+			newLocked := v != 0
+			if oldLocked && !newLocked {
 				change["lock_expire"] = constant.I0
-			} else if !oldLocked && v {
+			} else if !oldLocked && newLocked {
 				change["lock_expire"] = lockExpire
 			}
-			{{ end }}
-			change["locked"] = boolToInt16(v)
+			{{- end }}
+			change["locked"] = v
 		}
 	}
 
@@ -285,16 +304,16 @@ func (ro userRepo) Update(ctx context.Context, item *biz.UpdateUser) (err error)
 	}
 
 	if _, ok := change["role_id"]; ok {
-		roleID := uint64(0)
+		roleID := int64(0)
 		if item.RoleId != nil {
 			roleID = *item.RoleId
-		} else if v, ok := toUint64(change["role_id"]); ok {
+		} else if v, ok := toInt64(change["role_id"]); ok {
 			roleID = v
 		}
 		if roleID != 0 {
 			rdb := gorm.G[model.Role](ro.data.DB(ctx))
 			rm, rErr := rdb.Where("id = ?", roleID).First(ctx)
-			if rErr == gorm.ErrRecordNotFound || rm.ID == constant.UI0 {
+			if rErr == gorm.ErrRecordNotFound || rm.ID == 0 {
 				err = biz.ErrRecordNotFound(ctx)
 				log.WithContext(ctx).WithError(err).Error("invalid roleId: %d", roleID)
 				return
@@ -306,26 +325,26 @@ func (ro userRepo) Update(ctx context.Context, item *biz.UpdateUser) (err error)
 			}
 		}
 		// Make sure role_id is a numeric value for Updates(map).
-		if v, ok := toUint64(change["role_id"]); ok {
+		if v, ok := toInt64(change["role_id"]); ok {
 			change["role_id"] = v
 		}
 	}
 
 	// Normalize numeric fields that may come from JSON maps (float64/string).
-	{{ if .Computed.enable_user_lock_final }}
+	{{- if .Computed.enable_user_lock_final }}
 	if v, ok := change["lock_expire"]; ok {
 		if vv, ok := toInt64(v); ok {
 			change["lock_expire"] = vv
 		}
 	}
-	{{ end }}
-	{{ if or .Computed.enable_captcha_final .Computed.enable_user_lock_final }}
+	{{- end }}
+	{{- if or .Computed.enable_captcha_final .Computed.enable_user_lock_final }}
 	if v, ok := change["wrong"]; ok {
-		if vv, ok := toUint64(v); ok {
+		if vv, ok := toInt64(v); ok {
 			change["wrong"] = vv
 		}
 	}
-	{{ end }}
+	{{- end }}
 
 	err = ro.data.DB(ctx).Model(&model.User{}).Where("id = ?", item.Id).Updates(change).Error
 	if err != nil {
@@ -334,7 +353,11 @@ func (ro userRepo) Update(ctx context.Context, item *biz.UpdateUser) (err error)
 	return
 }
 
-func (ro userRepo) Delete(ctx context.Context, ids ...uint64) (err error) {
+func (ro userRepo) Delete(ctx context.Context, ids ...int64) (err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "Delete")
+	defer span.End()
+
 	db := gorm.G[model.User](ro.data.DB(ctx))
 	_, err = db.Where("id IN ?", ids).Delete(ctx)
 	if err != nil {
@@ -344,15 +367,19 @@ func (ro userRepo) Delete(ctx context.Context, ids ...uint64) (err error) {
 }
 
 func (ro userRepo) LastLogin(ctx context.Context, username string) (err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "LastLogin")
+	defer span.End()
+
 	fields := map[string]interface{}{
 		"last_login": carbon.Now(),
-		{{ if or .Computed.enable_captcha_final .Computed.enable_user_lock_final }}
+		{{- if or .Computed.enable_captcha_final .Computed.enable_user_lock_final }}
 		"wrong": constant.I0,
-		{{ end }}
+		{{- end }}
 		"locked": int16(0),
-		{{ if .Computed.enable_user_lock_final }}
+		{{- if .Computed.enable_user_lock_final }}
 		"lock_expire": constant.I0,
-		{{ end }}
+		{{- end }}
 	}
 	err = ro.data.DB(ctx).Model(&model.User{}).Where("username = ?", username).Updates(fields).Error
 	if err != nil {
@@ -362,7 +389,11 @@ func (ro userRepo) LastLogin(ctx context.Context, username string) (err error) {
 }
 
 func (ro userRepo) WrongPwd(ctx context.Context, req *biz.LoginTime) (err error) {
-	{{ if or .Computed.enable_captcha_final .Computed.enable_user_lock_final }}
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "WrongPwd")
+	defer span.End()
+
+	{{- if or .Computed.enable_captcha_final .Computed.enable_user_lock_final }}
 	oldItem, err := ro.GetByUsername(ctx, req.Username)
 	if err != nil {
 		return
@@ -378,7 +409,7 @@ func (ro userRepo) WrongPwd(ctx context.Context, req *biz.LoginTime) (err error)
 		newWrong = req.Wrong
 	}
 
-	{{ if .Computed.enable_user_lock_final }}
+	{{- if .Computed.enable_user_lock_final }}
 	if newWrong >= 5 {
 		change["locked"] = int16(1)
 		if newWrong == 5 {
@@ -392,7 +423,7 @@ func (ro userRepo) WrongPwd(ctx context.Context, req *biz.LoginTime) (err error)
 			change["lock_expire"] = int64(0)
 		}
 	}
-	{{ end }}
+	{{- end }}
 	change["wrong"] = newWrong
 
 	err = ro.data.DB(ctx).
@@ -404,16 +435,20 @@ func (ro userRepo) WrongPwd(ctx context.Context, req *biz.LoginTime) (err error)
 		log.WithContext(ctx).WithError(err).Error("update wrong password failed")
 	}
 	return
-	{{ else }}
+	{{- else }}
 	return nil
-	{{ end }}
+	{{- end }}
 }
 
 func (ro userRepo) UpdatePassword(ctx context.Context, item *biz.User) (err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "UpdatePassword")
+	defer span.End()
+
 	db := gorm.G[model.User](ro.data.DB(ctx))
 
 	m, qErr := db.Where("username = ?", item.Username).First(ctx)
-	if qErr == gorm.ErrRecordNotFound || m.ID == constant.UI0 {
+	if qErr == gorm.ErrRecordNotFound || m.ID == 0 {
 		err = biz.ErrRecordNotFound(ctx)
 		return
 	}
@@ -425,13 +460,13 @@ func (ro userRepo) UpdatePassword(ctx context.Context, item *biz.User) (err erro
 
 	fields := map[string]interface{}{
 		"password": item.Password,
-		{{ if or .Computed.enable_captcha_final .Computed.enable_user_lock_final }}
+		{{- if or .Computed.enable_captcha_final .Computed.enable_user_lock_final }}
 		"wrong": constant.I0,
-		{{ end }}
+		{{- end }}
 		"locked": int16(0),
-		{{ if .Computed.enable_user_lock_final }}
+		{{- if .Computed.enable_user_lock_final }}
 		"lock_expire": constant.I0,
-		{{ end }}
+		{{- end }}
 	}
 	err = ro.data.DB(ctx).Model(&model.User{}).Where("id = ?", m.ID).Updates(fields).Error
 	if err != nil {
@@ -440,11 +475,15 @@ func (ro userRepo) UpdatePassword(ctx context.Context, item *biz.User) (err erro
 	return
 }
 
-func (ro userRepo) IdExists(ctx context.Context, id uint64) (err error) {
+func (ro userRepo) IdExists(ctx context.Context, id int64) (err error) {
+	tr := otel.Tracer("data")
+	ctx, span := tr.Start(ctx, "IdExists")
+	defer span.End()
+
 	db := gorm.G[model.User](ro.data.DB(ctx))
 
 	m, qErr := db.Where("id = ?", id).First(ctx)
-	if qErr == gorm.ErrRecordNotFound || m.ID == constant.UI0 {
+	if qErr == gorm.ErrRecordNotFound || m.ID == 0 {
 		err = biz.ErrRecordNotFound(ctx)
 		return
 	}
@@ -526,6 +565,21 @@ func boolToInt16(v bool) int16 {
 
 func ptrInt16(v int16) *int16 { return &v }
 
+func toInt16(v interface{}) (int16, bool) {
+	switch x := v.(type) {
+	case int16:
+		return x, true
+	case int:
+		return int16(x), true
+	case int64:
+		return int16(x), true
+	case float64:
+		return int16(x), true
+	default:
+		return 0, false
+	}
+}
+
 func toInt64(v interface{}) (int64, bool) {
 	switch x := v.(type) {
 	case int64:
@@ -552,40 +606,7 @@ func toInt64(v interface{}) (int64, bool) {
 	}
 }
 
-func toUint64(v interface{}) (uint64, bool) {
-	switch x := v.(type) {
-	case uint64:
-		return x, true
-	case uint:
-		return uint64(x), true
-	case int64:
-		if x < 0 {
-			return 0, false
-		}
-		return uint64(x), true
-	case int:
-		if x < 0 {
-			return 0, false
-		}
-		return uint64(x), true
-	case float64:
-		if x < 0 {
-			return 0, false
-		}
-		return uint64(x), true
-	case string:
-		if x == "" {
-			return 0, true
-		}
-		i, err := strconv.ParseUint(x, 10, 64)
-		if err != nil {
-			return 0, false
-		}
-		return i, true
-	default:
-		return 0, false
-	}
-}
+
 
 func toBool(v interface{}) (bool, bool) {
 	switch x := v.(type) {

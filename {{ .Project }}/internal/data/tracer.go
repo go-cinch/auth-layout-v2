@@ -67,4 +67,3 @@ func NewTracer(c *conf.Bootstrap) (tp *trace.TracerProvider, err error) {
 	log.Info("initialize tracer success, ratio: %v", c.Tracer.Ratio)
 	return
 }
-

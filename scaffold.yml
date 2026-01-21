@@ -177,7 +177,7 @@ computed:
   module_name_final: '{{ or .Scaffold.module_name .Scaffold.service_name .Scaffold.Project }}'
   common_module_final: '{{ or .Scaffold.common_module "github.com/go-cinch/common" }}'
   # Middlewares: convert array ["tenant","header"] to string "tenant,header"
-  middlewares_final: '{{ $m := .Scaffold.middlewares }}{{ if not $m }}header{{ else }}{{ $t := printf "%T" $m }}{{ if or (hasPrefix $t "[]") (eq $t "[]interface {}") }}{{ $m | join "," }}{{ else }}{{ $m }}{{ end }}{{ end }}'
+  middlewares_final: '{{ $m := .Scaffold.middlewares }}{{ if not $m }}header,permission{{ else }}{{ $t := printf "%T" $m }}{{ if or (hasPrefix $t "[]") (eq $t "[]interface {}") }}{{ $m | join "," }}{{ else }}{{ $m }}{{ end }}{{ end }}'
   enable_trace_final: '{{ eq .Scaffold.enable_trace "true" }}'
   enable_ws_final: '{{ eq .Scaffold.enable_ws "true" }}'
   enable_health_check_final: '{{ eq .Scaffold.enable_health_check "true" }}'
@@ -311,36 +311,11 @@ features:
       - "**/internal/biz/user_lock.go"
 
 presets:
-  # Simple preset: Core RBAC with Redis caching
-  simple:
-    service_name: ""
-    module_name: ""
-    http_port: "8080"
-    grpc_port: "8180"
-    enable_health_check: "true"
-    db_type: "postgres"
-    orm_type: "gorm"
-    enable_gen_model: "true"
-    enable_redis: "true"
-    enable_cache: "true"
-    enable_idempotent: "true"
-    enable_action: "false"
-    enable_user_group: "false"
-    enable_whitelist: "true"
-    enable_hotspot: "false"
-    enable_captcha: "false"
-    enable_user_lock: "false"
-    enable_ws: "false"
-    enable_task: "false"
-    middlewares: "header"
-    enable_trace: "true"
-    enable_reason_proto: "true"
-    enable_i18n: "false"
-
   # Default preset: Enterprise-grade auth with all features
   default:
     service_name: ""
     module_name: ""
+    common_module: "github.com/go-cinch/common"
     http_port: "8080"
     grpc_port: "8180"
     enable_health_check: "true"
@@ -358,7 +333,7 @@ presets:
     enable_user_lock: "true"
     enable_ws: "false"
     enable_task: "true"
-    middlewares: "header"
+    middlewares: "header,permission"
     enable_trace: "true"
     enable_reason_proto: "true"
     enable_i18n: "true"

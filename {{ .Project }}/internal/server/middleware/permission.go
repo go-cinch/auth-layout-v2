@@ -7,6 +7,8 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel"
+
 	"{{ .Computed.common_module_final }}/copierx"
 	"{{ .Computed.common_module_final }}/jwt"
 	{{ if .Computed.enable_whitelist_final }}
@@ -45,16 +47,16 @@ const (
 func Permission(c *conf.Bootstrap, rds redis.UniversalClient, permission *biz.PermissionUseCase, user *biz.UserUseCase{{ if .Computed.enable_whitelist_final }}, whitelist *biz.WhitelistUseCase{{ end }}) middleware.Middleware {
 	return func(handler middleware.Handler) middleware.Handler {
 		return func(ctx context.Context, req interface{}) (rp interface{}, err error) {
-			if permission == nil || user == nil {
-				return nil, biz.ErrInternal(ctx, "permission middleware not configured")
-			}
+			tr := otel.Tracer("middleware")
+			ctx, span := tr.Start(ctx, "Permission")
+			defer span.End()
 
-			tr, ok := transport.FromServerContext(ctx)
+			trans, ok := transport.FromServerContext(ctx)
 			if !ok {
 				return handler(ctx, req)
 			}
 
-			operation := tr.Operation()
+			operation := trans.Operation()
 			// Always allow standard gRPC health checks.
 			if strings.HasPrefix(operation, "/grpc.health.v1.Health/") {
 				return handler(ctx, req)
@@ -65,8 +67,8 @@ func Permission(c *conf.Bootstrap, rds redis.UniversalClient, permission *biz.Pe
 				method string
 				uri    string
 			)
-			if tr.Kind() == transport.KindHTTP {
-				if ht, ok := tr.(kratosHttp.Transporter); ok && ht.Request() != nil && ht.Request().URL != nil {
+			if trans.Kind() == transport.KindHTTP {
+				if ht, ok := trans.(kratosHttp.Transporter); ok && ht.Request() != nil && ht.Request().URL != nil {
 					method = ht.Request().Method
 					uri = ht.Request().URL.Path
 				}
@@ -95,11 +97,11 @@ func Permission(c *conf.Bootstrap, rds redis.UniversalClient, permission *biz.Pe
 				}
 				{{ if .Computed.enable_whitelist_final }}
 				// Permission whitelist can short-circuit the permission check endpoint.
-				if whitelist != nil && permissionWhitelist(ctx, whitelist, checkReq) {
+				if permissionWhitelist(ctx, whitelist, checkReq) {
 					return &emptypb.Empty{}, nil
 				}
 				// Optional: allow skipping JWT parsing via whitelist rules.
-				if whitelist != nil && jwtWhitelist(ctx, whitelist, operation) {
+				if jwtWhitelist(ctx, whitelist, operation) {
 					return handler(ctx, req)
 				}
 				{{ end }}
@@ -116,7 +118,7 @@ func Permission(c *conf.Bootstrap, rds redis.UniversalClient, permission *biz.Pe
 
 			{{ if .Computed.enable_whitelist_final }}
 			// JWT whitelist is checked first (skip authentication & authorization).
-			if whitelist != nil && jwtWhitelist(ctx, whitelist, operation) {
+			if jwtWhitelist(ctx, whitelist, operation) {
 				return handler(ctx, req)
 			}
 			{{ end }}
@@ -130,16 +132,14 @@ func Permission(c *conf.Bootstrap, rds redis.UniversalClient, permission *biz.Pe
 
 			{{ if .Computed.enable_whitelist_final }}
 			// Permission whitelist skips permission checks (JWT still required).
-			if whitelist != nil {
-				matchResource := operation
-				if method != "" && uri != "" {
-					// Prefer HTTP matching; keep grpc op as an optional 3rd segment.
-					matchResource = strings.Join([]string{method, uri, operation}, "|")
-				}
-				ok2, _ := whitelist.Match(ctx, biz.WhitelistPermissionCategory, matchResource)
-				if ok2 {
-					return handler(ctx, req)
-				}
+			matchResource := operation
+			if method != "" && uri != "" {
+				// Prefer HTTP matching; keep grpc op as an optional 3rd segment.
+				matchResource = strings.Join([]string{method, uri, operation}, "|")
+			}
+			ok2, _ := whitelist.Match(ctx, biz.WhitelistPermissionCategory, matchResource)
+			if ok2 {
+				return handler(ctx, req)
 			}
 			{{ end }}
 
@@ -151,7 +151,7 @@ func Permission(c *conf.Bootstrap, rds redis.UniversalClient, permission *biz.Pe
 
 			resource := operation
 			checkMethod := ""
-			if tr.Kind() == transport.KindHTTP {
+			if trans.Kind() == transport.KindHTTP {
 				resource = uri
 				checkMethod = method
 			}
@@ -167,14 +167,18 @@ func Permission(c *conf.Bootstrap, rds redis.UniversalClient, permission *biz.Pe
 }
 
 func permissionRequest(ctx context.Context, req interface{}) (r biz.CheckPermission) {
-	_ = copierx.Copy(&r, req)
-	tr, _ := transport.FromServerContext(ctx)
+	tr := otel.Tracer("middleware")
+	ctx, span := tr.Start(ctx, "permissionRequest")
+	defer span.End()
+
+	copierx.Copy(&r, req)
+	trans, _ := transport.FromServerContext(ctx)
 
 	// Prefer nginx-provided headers when present.
-	if method := strings.TrimSpace(tr.RequestHeader().Get(permissionHeaderMethod)); method != "" {
+	if method := strings.TrimSpace(trans.RequestHeader().Get(permissionHeaderMethod)); method != "" {
 		r.Method = method
 	}
-	if uri := strings.TrimSpace(tr.RequestHeader().Get(permissionHeaderURI)); uri != "" {
+	if uri := strings.TrimSpace(trans.RequestHeader().Get(permissionHeaderURI)); uri != "" {
 		r.URI = uri
 	}
 
@@ -192,6 +196,10 @@ func permissionRequest(ctx context.Context, req interface{}) (r biz.CheckPermiss
 
 {{ if .Computed.enable_whitelist_final }}
 func permissionWhitelist(ctx context.Context, whitelist *biz.WhitelistUseCase, r biz.CheckPermission) (ok bool) {
+	tr := otel.Tracer("middleware")
+	ctx, span := tr.Start(ctx, "permissionWhitelist")
+	defer span.End()
+
 	matchResource := strings.TrimSpace(r.Resource)
 	if strings.TrimSpace(r.Method) != "" && strings.TrimSpace(r.URI) != "" {
 		// Prefer HTTP matching; include grpc resource as an optional 3rd segment when present.
@@ -210,12 +218,20 @@ func permissionWhitelist(ctx context.Context, whitelist *biz.WhitelistUseCase, r
 }
 
 func jwtWhitelist(ctx context.Context, whitelist *biz.WhitelistUseCase, operation string) bool {
+	tr := otel.Tracer("middleware")
+	ctx, span := tr.Start(ctx, "jwtWhitelist")
+	defer span.End()
+
 	ok, _ := whitelist.Match(ctx, biz.WhitelistJwtCategory, operation)
 	return ok
 }
 {{ end }}
 
 func parseJwt(ctx context.Context, c *conf.Bootstrap, client redis.UniversalClient, jwtKey string) (user *jwt.User, err error) {
+	tr := otel.Tracer("middleware")
+	ctx, span := tr.Start(ctx, "parseJwt")
+	defer span.End()
+
 	user = jwt.FromServerContext(ctx)
 	if user.Token == "" {
 		return nil, biz.ErrJwtMissingToken(ctx)
@@ -237,7 +253,7 @@ func parseJwt(ctx context.Context, c *conf.Bootstrap, client redis.UniversalClie
 		}
 		ctx = jwt.NewServerContext(ctx, info.Claims, "code", "platform")
 		user = jwt.FromServerContext(ctx)
-		_ = client.Set(ctx, key, utils.Struct2JSON(user), jwtTokenCacheExpire).Err()
+		client.Set(ctx, key, utils.Struct2JSON(user), jwtTokenCacheExpire).Err()
 		return user, nil
 	}
 
@@ -253,6 +269,10 @@ func parseJwt(ctx context.Context, c *conf.Bootstrap, client redis.UniversalClie
 }
 
 func parseToken(ctx context.Context, key, jwtToken string) (info *jwtV4.Token, err error) {
+	tr := otel.Tracer("middleware")
+	ctx, span := tr.Start(ctx, "parseToken")
+	defer span.End()
+
 	info, err = jwtV4.Parse(jwtToken, func(_ *jwtV4.Token) (rp interface{}, err error) {
 		return []byte(key), nil
 	})
@@ -278,4 +298,3 @@ func parseToken(ctx context.Context, key, jwtToken string) (info *jwtV4.Token, e
 	}
 	return info, nil
 }
-
