@@ -24,7 +24,7 @@ import (
 	{{- end }}
 
 	v1 "{{ .Computed.module_name_final }}/api/{{ .Computed.service_name_final }}"
-	{{- if contains "permission" .Computed.middlewares_final }}
+	{{- if and (contains "permission" .Computed.middlewares_final) .Computed.enable_whitelist_final }}
 	"{{ .Computed.module_name_final }}/internal/biz"
 	{{- end }}
 	"{{ .Computed.module_name_final }}/internal/conf"
@@ -41,9 +41,7 @@ func NewHTTPServer(
 	{{- if or (contains "permission" .Computed.middlewares_final) .Computed.enable_idempotent_final }}
 	rds redis.UniversalClient,
 	{{- end }}
-	{{- if contains "permission" .Computed.middlewares_final }}
-	permission *biz.PermissionUseCase,
-	user *biz.UserUseCase,
+	{{- if and (contains "permission" .Computed.middlewares_final) .Computed.enable_whitelist_final }}
 	whitelist *biz.WhitelistUseCase,
 	{{- end }}
 ) *http.Server {
@@ -70,7 +68,7 @@ func NewHTTPServer(
 	{{- if contains "permission" .Computed.middlewares_final }}
 	// Add Permission middleware for JWT parsing when enabled
 	if c.Server.Jwt.Enable {
-		middlewares = append(middlewares, localMiddleware.Permission(c, rds, permission, user, whitelist))
+		middlewares = append(middlewares, localMiddleware.Permission(c, rds{{ if .Computed.enable_whitelist_final }}, whitelist{{ end }}))
 	}
 	{{- end }}
 	{{- if .Computed.enable_idempotent_final }}
